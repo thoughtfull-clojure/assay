@@ -1,0 +1,4 @@
+;; Tonsky-style formatting: fixed 2-space body indent for every form,
+;; never aligned to the first argument. See
+;; https://tonsky.me/blog/clojurefmt/
+{:indents {#re ".*" [[:inner 0]]}}

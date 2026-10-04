@@ -1,0 +1,23 @@
+# Commit message rules, enforced by the gitlint commit-msg hook.
+# Built-in rules (including "body is required") stay on; these settings
+# tighten line lengths to the conventional 50/72.
+# See https://jorisroovers.com/gitlint/latest/rules/builtin_rules/
+[general]
+verbosity=3
+regex-style-search=true
+
+[title-max-length]
+line-length=50
+
+[title-min-length]
+min-length=5
+
+[title-must-not-contain-word]
+words=wip
+
+[body-max-line-length]
+line-length=72
+
+# Long URLs can't be wrapped.
+[ignore-body-lines]
+regex=^\s*(\[\d+\]: )?https?://\S+$

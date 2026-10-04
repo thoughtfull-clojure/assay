@@ -1,0 +1,12 @@
+# typos spell checker config, passed via --config by the Git hook.
+# See https://github.com/crate-ci/typos/blob/master/docs/reference.md
+[files]
+extend-exclude = [
+  # Vendored upstream; Vale rule lists contain deliberate misspellings.
+  ".config/vale/Google/",
+  "devenv.lock",
+]
+
+# Project words that typos would otherwise "correct".
+[default.extend-words]
+edn = "edn"

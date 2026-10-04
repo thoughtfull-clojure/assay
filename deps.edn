@@ -1,0 +1,13 @@
+{:paths ["src"]
+ :deps {org.clojure/clojure {:mvn/version "1.12.3"}
+        rewrite-clj/rewrite-clj {:mvn/version "1.2.50"}}
+ :aliases
+ {;; clojure -M:run path/to/src ...
+  :run
+  {:main-opts ["-m" "systems.thoughtfull.assay.main"]}
+
+  ;; clojure -M:test
+  :test
+  {:extra-paths ["test" "test-resources"]
+   :extra-deps {lambdaisland/kaocha {:mvn/version "1.91.1392"}}
+   :main-opts ["-m" "kaocha.runner"]}}}

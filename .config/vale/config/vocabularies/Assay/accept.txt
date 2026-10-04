@@ -1,0 +1,11 @@
+config
+cyclomatic
+devenv
+docstrings
+(?i)assay
+(?i)claude
+kaocha
+namespaces
+technosophist
+Tonsky
+vendored

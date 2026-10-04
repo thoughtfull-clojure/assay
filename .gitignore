@@ -1,0 +1,13 @@
+/target
+/.cpcache
+/.nrepl-port
+/.config/clj-kondo/.cache
+*.jar
+
+# devenv
+/.devenv*
+/.pre-commit-config.yaml
+
+# editor lock/backup files
+.#*
+*~
