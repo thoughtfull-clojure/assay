@@ -1,11 +1,15 @@
+arity
 config
-cyclomatic
 devenv
 docstrings
 (?i)assay
+(?i)babashka
 (?i)claude
+(?i)cyclomatic
 kaocha
+namespace
 namespaces
+Polylith
 technosophist
 Tonsky
 vendored

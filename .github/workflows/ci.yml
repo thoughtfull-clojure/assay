@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          # assay --base needs history to find the merge-base.
+          fetch-depth: 0
+
+      - uses: actions/setup-java@v6.0.1
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - uses: DeLaGuardo/setup-clojure@13.7.0
+        with:
+          cli: latest
+          bb: latest
+
+      - name: Check workspace
+        run: clojure -M:poly check
+
+      - name: Test (JVM)
+        run: clojure -M:dev:test
+
+      - name: Test (babashka)
+        run: bb test
+
+      # On pull requests, compare with the merge-base of the target branch and
+      # fail only on new error-level violations in changed bricks. On pushes,
+      # fail on any error-level violation.
+      - name: Assay
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          args=(--format github --format html)
+          if [ -n "$BASE_REF" ]; then
+            args+=(--base "origin/$BASE_REF")
+          fi
+          bb assay "${args[@]}"
+
+      - name: Upload assay report
+        if: always()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: assay-report
+          path: target/assay/index.html
+          if-no-files-found: ignore

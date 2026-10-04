@@ -10,3 +10,4 @@ extend-exclude = [
 # Project words that typos would otherwise "correct".
 [default.extend-words]
 edn = "edn"
+juxt = "juxt"

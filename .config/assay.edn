@@ -1,0 +1,10 @@
+;; assay configuration for this workspace. See README.md.
+{;; Rules for each brick's metrics, merged over the defaults. A metric listed
+ ;; here replaces all of its default rules; [] disables them.
+ :thresholds {}
+
+ ;; Rules for how much a brick's metrics may grow, applied with --base.
+ :changes {:cyclomatic-complexity [{:rule :max-increase :value 15
+                                    :level :warning}]
+           :lines [{:rule :max-increase-percent :value 50
+                    :level :warning}]}}

@@ -4,38 +4,62 @@ This file guides Claude Code when it works in this repository.
 
 ## Project
 
-`assay` gathers code metrics about Clojure source: form counts,
-cyclomatic complexity, and similar measures. It parses source with
-rewrite-clj so metrics see code as written: comments, reader macros,
-and all.
+`assay` measures the bricks of a Polylith workspace (form counts,
+cyclomatic complexity, nesting depth, and so on), checks them against
+thresholds, and reports as HTML, GitHub Actions output, or text. It can
+compare with a base revision so CI and Git hooks fail only on new
+violations. See `README.md` for user-facing behavior.
 
-All namespaces use the `systems.thoughtfull.*` prefix.
+assay is itself a Polylith workspace. The top namespace is
+`systems.thoughtfull.assay`, and each brick's public API is its
+`interface` namespace. Bricks must call each other only through
+interfaces; `poly check` enforces this.
 
-- `systems.thoughtfull.assay` is the public API (`analyze-file`,
-  `analyze-string`).
-- `systems.thoughtfull.assay.parse` parses source into rewrite-clj nodes.
-- `systems.thoughtfull.assay.metrics` holds metric functions and the
-  `metrics` registry. To add a metric, write a function from a `:forms`
-  node to a number and register it.
-- `systems.thoughtfull.assay.main` is the command line entry point.
+- `workspace`: finds bricks and their source files.
+- `parse`: parses source with rewrite-clj, so metrics see code as
+  written: comments, reader macros, and all.
+- `metrics`: per-function and per-brick measurements. To add a metric,
+  compute it in `measure-brick` and add it to `metrics`.
+- `thresholds`: `:max`, `:min`, and `:std-devs` rules. To add a rule type,
+  add a method to `evaluate`.
+- `baseline`: compares with a base report; change rules are methods of
+  `evaluate-change`.
+- `git`: merge-base, changed files, and extracting a revision's tree.
+- `html-report`, `github-report`, `text-report`: render a report map.
+- `cli` (base): parses options and wires the components together.
+
+Add new bricks to `deps.edn` (`:dev` and `:test`),
+`projects/assay/deps.edn`, `tests.edn`, and `bb.edn`.
+
+## Babashka compatibility
+
+Git hooks and CI run assay under babashka for ~0.1 s startup, so brick
+source must stay babashka-compatible: no `gen-class`, no `defrecord` or
+`deftype` that implements Java interfaces, and only the Java classes
+babashka includes. `bb test` runs every test under babashka; run it as
+well as the JVM tests.
 
 ## Commands
 
 Run these inside `devenv shell`:
 
 ```sh
-clojure -M:test                 # run tests (kaocha)
-clojure -M:test --focus <var>   # run one test
+test                            # JVM tests (kaocha)
+test --focus <ns-or-var>        # run some tests
+bb test                         # tests under babashka
+poly check                      # validate the workspace
 lint                            # lint (clj-kondo)
 fmt                             # format (cljfmt)
-clojure -M:run src              # print metrics for files under src
-devenv test                     # run tests and all Git hooks
+bb assay --format text          # run assay on itself
+devenv test                     # poly check, tests, and all Git hooks
 ```
 
 ## Git hooks
 
 devenv installs the hooks when the shell starts (see `devenv.nix`):
 
+- `assay` runs `bb assay --format text --base HEAD` when brick source
+  changes, failing on new error-level violations.
 - `cljfmt` and `clj-kondo` on Clojure and EDN files.
 - `vale` with the Google style on Markdown files (config in `.config/vale.ini`).
 - `gitlint` on commit messages (config in `.config/gitlint`): a title of at most
@@ -63,14 +87,16 @@ configures this. Don't "fix" indentation to align with arguments.
 
 Tool config lives in `.config/`, not the repository root: `cljfmt.edn`,
 `clj-kondo/`, `vale.ini`, `vale/`, `gitlint`, `typos.toml`,
-`markdownlint.yaml`, and `lychee.toml`. Tools don't look there by
-default, so always pass the path. The `lint` and `fmt` scripts and the Git
-hooks already do. When you call a tool directly, use
+`markdownlint.yaml`, `lychee.toml`, and `assay.edn`. Tools don't look
+there by default, so always pass the path. The `lint` and `fmt` scripts
+and the Git hooks already do. When you call a tool directly, use
 `--config .config/cljfmt.edn`, `--config-dir .config/clj-kondo`, and so
 on. Only files that must sit at the root stay there: `deps.edn`,
-`tests.edn` (kaocha), `devenv.*`, and `.gitignore`.
+`workspace.edn`, `tests.edn` (kaocha), `bb.edn`, `devenv.*`, and
+`.gitignore`.
 
 Vale styles live in `.config/vale/` (the `StylesPath`). The directory
 holds a copy of the Google style from errata-ai/Google v0.7.1. To update
 it, copy a newer release over `.config/vale/Google/`. Add project jargon
-that fails the spelling check to `.config/vale/config/vocabularies/Assay/accept.txt`.
+that fails the spelling check to
+`.config/vale/config/vocabularies/Assay/accept.txt`.

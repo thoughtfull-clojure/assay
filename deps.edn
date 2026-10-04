@@ -1,13 +1,39 @@
-{:paths ["src"]
- :deps {org.clojure/clojure {:mvn/version "1.12.3"}
-        rewrite-clj/rewrite-clj {:mvn/version "1.2.50"}}
- :aliases
- {;; clojure -M:run path/to/src ...
-  :run
-  {:main-opts ["-m" "systems.thoughtfull.assay.main"]}
+{:aliases
+ {;; The development project: every brick, for the REPL and for tests.
+  :dev
+  {:extra-paths ["development/src"]
+   :extra-deps {org.clojure/clojure {:mvn/version "1.12.3"}
+                poly/workspace {:local/root "components/workspace"}
+                poly/parse {:local/root "components/parse"}
+                poly/metrics {:local/root "components/metrics"}
+                poly/thresholds {:local/root "components/thresholds"}
+                poly/html-report {:local/root "components/html-report"}
+                poly/github-report {:local/root "components/github-report"}
+                poly/git {:local/root "components/git"}
+                poly/baseline {:local/root "components/baseline"}
+                poly/text-report {:local/root "components/text-report"}
+                poly/cli {:local/root "bases/cli"}}}
 
-  ;; clojure -M:test
+  ;; clojure -M:dev:test
   :test
-  {:extra-paths ["test" "test-resources"]
+  {:extra-paths ["components/workspace/test"
+                 "components/parse/test"
+                 "components/metrics/test"
+                 "components/thresholds/test"
+                 "components/html-report/test"
+                 "components/github-report/test"
+                 "components/git/test"
+                 "components/baseline/test"
+                 "components/text-report/test"
+                 "bases/cli/test"]
    :extra-deps {lambdaisland/kaocha {:mvn/version "1.91.1392"}}
-   :main-opts ["-m" "kaocha.runner"]}}}
+   :main-opts ["-m" "kaocha.runner"]}
+
+  ;; clojure -M:poly check (devenv also provides poly on the PATH)
+  :poly
+  {:extra-deps {polylith/clj-poly {:mvn/version "0.3.32"}}
+   :main-opts ["-m" "polylith.clj.core.poly-cli.core"]}
+
+  ;; clojure -M:dev:run [options]
+  :run
+  {:main-opts ["-m" "systems.thoughtfull.assay.cli.main"]}}}

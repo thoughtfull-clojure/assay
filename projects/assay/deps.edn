@@ -1,0 +1,14 @@
+{:deps {org.clojure/clojure {:mvn/version "1.12.3"}
+        poly/workspace {:local/root "../../components/workspace"}
+        poly/parse {:local/root "../../components/parse"}
+        poly/metrics {:local/root "../../components/metrics"}
+        poly/thresholds {:local/root "../../components/thresholds"}
+        poly/html-report {:local/root "../../components/html-report"}
+        poly/github-report {:local/root "../../components/github-report"}
+        poly/git {:local/root "../../components/git"}
+        poly/baseline {:local/root "../../components/baseline"}
+        poly/text-report {:local/root "../../components/text-report"}
+        poly/cli {:local/root "../../bases/cli"}}
+ :aliases
+ {:test {:extra-paths []
+         :extra-deps {}}}}

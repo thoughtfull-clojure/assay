@@ -26,6 +26,7 @@ in
     pkgs.clj-kondo
     pkgs.cljfmt
     pkgs.gitlint
+    pkgs.polylith
     pkgs.vale
   ];
 
@@ -39,6 +40,17 @@ in
     cljfmt = {
       enable = true;
       entry = "${pkgs.cljfmt}/bin/cljfmt fix --config ${cljfmtConfig}";
+    };
+
+    # Dogfood: fail the commit on new error-level metric violations, comparing
+    # the working tree with HEAD. Runs under babashka (~0.1 s).
+    assay = {
+      enable = true;
+      name = "assay";
+      description = "Check Clojure code metrics with assay.";
+      entry = "${pkgs.babashka}/bin/bb assay --format text --base HEAD";
+      pass_filenames = false;
+      files = "^(components|bases)/[^/]+/src/.*\\.clj[cs]?$";
     };
 
     clj-kondo = {
@@ -111,12 +123,14 @@ in
   };
 
   scripts = {
-    test.exec = "clojure -M:test \"$@\"";
-    lint.exec = "clj-kondo --config-dir ${cljKondoConfigDir} --lint src test";
-    fmt.exec = "cljfmt fix --config ${cljfmtConfig} src test";
+    test.exec = "clojure -M:dev:test \"$@\"";
+    lint.exec = "clj-kondo --config-dir ${cljKondoConfigDir} --lint components bases development";
+    fmt.exec = "cljfmt fix --config ${cljfmtConfig} components bases development";
+    assay.exec = "clojure -M:dev:run \"$@\"";
   };
 
   enterTest = ''
-    clojure -M:test
+    poly check
+    clojure -M:dev:test
   '';
 }
