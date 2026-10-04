@@ -28,7 +28,58 @@
   (is (= {:max-nesting-depth 3
           :max-nesting-location {:file "f.clj" :line 2}}
         (select-keys (measure "(a)\n(b [c {:d 1}])")
-          [:max-nesting-depth :max-nesting-location]))))
+          [:max-nesting-depth :max-nesting-location])))
+  (is (= 1 (:max-nesting-depth (measure "[]")))))
+
+(defn- depth
+  [source]
+  (:max-nesting-depth (measure source)))
+
+(deftest binding-nesting-depth-test
+  (testing "the body nests inside the let"
+    ;; defn, let, (f (g x))
+    (is (= 4 (depth "(defn f [] (let [x 1] (f (g x))))"))))
+  (testing "binding values start again at their own depth"
+    ;; (f (g (h x))) is 3 deep on its own; defn and let don't add to it
+    (is (= 3 (depth "(defn f [] (let [x (f (g (h 1)))] x))")))
+    (is (= 3 (depth "(let [{:keys [a]} (f (g (h 1)))] a)")))
+    (is (= 1 (depth "(let [[a [b [c]]] x] a)"))
+      "destructuring adds nothing"))
+  (testing "other binding forms"
+    (is (= 3 (depth "(loop [x (f (g (h 1)))] (recur x))")))
+    (is (= 3 (depth "(when-let [x (f (g (h 1)))] x)")))
+    (is (= 3 (depth "(for [x (f (g (h 1))) :let [y (f (g (h x)))]] y)")))
+    (is (= 3 (depth "(letfn [(f [x] (g (h x)))] (f 1))"))
+      "letfn functions start again"))
+  (testing "a let without a binding vector nests normally"
+    (is (= 2 (depth "(let x (f))")))))
+
+(deftest params-nesting-depth-test
+  (testing "parameter vectors add nothing"
+    (is (= 1 (depth "(defn f [{:keys [a] :or {a 1}}] a)")))
+    (is (= 1 (depth "(fn [[a [b]]] a)")))
+    (is (= 1 (depth "(defn f \"doc\" {:m 1} [[a]] a)"))))
+  (testing "vectors in the body still count"
+    (is (= 3 (depth "(defn f [x] [x [x]])"))))
+  (testing "each arity nests, but not its parameters"
+    (is (= 3 (depth "(defn f ([[a]] (g a)) ([a b] b))"))))
+  (testing "defmethod skips its dispatch value, then its parameters"
+    (is (= 2 (depth "(defmethod m [:a :b] [[x]] (g x))"))))
+  (testing "letfn functions skip their parameters"
+    (is (= 1 (depth "(letfn [(f [{:keys [a]}] a)] 1)")))))
+
+(deftest nesting-location-test
+  (testing "points to the deepest form and names its function"
+    (is (= {:file "f.clj" :line 3 :name "f"}
+          (:max-nesting-location
+           (measure "(defn f [x]\n  (let [y 1]\n    (g (h x))))\n(def z [1])")))))
+  (testing "binding values that restart can still be the deepest"
+    (is (= {:file "f.clj" :line 2 :name "f"}
+          (:max-nesting-location
+           (measure "(defn f []\n  (let [y (a (b (c (d 1))))]\n    y))")))))
+  (testing "no name outside a function"
+    (is (= {:file "f.clj" :line 1}
+          (:max-nesting-location (measure "(def x [[1]])"))))))
 
 (deftest functions-test
   (is (= [{:name "f" :file "f.clj" :line 2 :complexity 1}
@@ -94,6 +145,7 @@
                       :max-nesting-depth 3}
             :locations {:max-function-complexity
                         {:file file :line 3 :name "branchy"}
-                        :max-nesting-depth {:file file :line 3}}}
+                        :max-nesting-depth {:file file :line 3
+                                            :name "branchy"}}}
           (dissoc (metrics/measure-brick root {:name "c" :files [file]})
             :functions)))))
