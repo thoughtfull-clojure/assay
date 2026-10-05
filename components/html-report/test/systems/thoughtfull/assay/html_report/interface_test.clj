@@ -117,3 +117,8 @@
                                :message "12 is above the maximum of 10"}]))]
     (is (= 1 (count (re-seq #"class=\"num error\"" html)))
       "only the offending analyze is highlighted, not its namesake")))
+
+(deftest section-order-test
+  (is (= ["Violations" "Functions" "Dependencies" "Bricks" "Thresholds"]
+        (map second (re-seq #"<h2[^>]*>([^<]+)</h2>"
+                      (html-report/render report))))))

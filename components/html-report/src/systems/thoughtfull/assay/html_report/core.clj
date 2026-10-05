@@ -456,14 +456,14 @@ import('https://cdn.jsdelivr.net/npm/mermaid@12.1.0/dist/mermaid.esm.min.mjs')
     [:h2 "Violations"]
     (violations-table violations comparison (:hidden-warnings report))
     (comparison-sections report)
-    [:h2 "Bricks"]
-    (metrics-table bricks violations)
-    (legend metrics/columns)
     [:h2 "Functions"]
     (functions-table bricks violations 15)
     (legend metrics/function-metrics)
     [:h2 "Dependencies"]
     (dependencies-section report)
+    [:h2 "Bricks"]
+    (metrics-table bricks violations)
+    (legend metrics/columns)
     (thresholds-section report)))
 
 (defn render

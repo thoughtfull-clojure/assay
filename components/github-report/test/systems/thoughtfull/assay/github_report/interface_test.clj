@@ -89,15 +89,15 @@
                        :message "12 is above the maximum of 10"})
                     (assoc :edges [{:from "a" :to "b"}])))
         sections (map second (re-seq #"(?m)^### (.*)$" summary))]
-    (is (= ["Violations" "Bricks" "Functions" "Dependencies"] sections))
+    (is (= ["Violations" "Functions" "Dependencies" "Bricks"] sections))
     (is (str/includes? summary
           "| `f` | a | **12** ❌ | 3 | 40 | 1 | `components/a/src/a.clj:7` |")
       "the function's offending value is highlighted")
     (is (str/includes? summary "```mermaid\ngraph TD\n  b0[\"a\"]"))
     (is (= 2 (count (re-seq #"<details><summary>What these metrics mean" summary)))
       "a legend after the bricks and after the functions")
-    (is (str/includes? summary "</details>\n\n### Functions")
-      "the bricks legend closes before the functions section")
+    (is (str/includes? summary "</details>\n\n### Dependencies")
+      "the functions legend closes before the dependencies section")
     (is (str/includes? summary "| Parameters | Positional parameters"))))
 
 (deftest brick-annotation-test
