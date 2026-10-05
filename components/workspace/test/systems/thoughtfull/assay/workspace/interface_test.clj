@@ -23,16 +23,19 @@
     (is (= [{:name "cli"
              :type :base
              :dir "bases/cli"
-             :files ["bases/cli/src/cli/main.clj"]}
+             :files ["bases/cli/src/cli/main.clj"]
+             :test-files []}
             {:name "alpha"
              :type :component
              :dir "components/alpha"
              :files ["components/alpha/src/a/core.cljc"
-                     "components/alpha/src/a/interface.clj"]}
+                     "components/alpha/src/a/interface.clj"]
+             :test-files ["components/alpha/test/a/core_test.clj"]}
             {:name "zeta"
              :type :component
              :dir "components/zeta"
-             :files ["components/zeta/src/z/core.clj"]}]
+             :files ["components/zeta/src/z/core.clj"]
+             :test-files []}]
           (workspace/bricks root)))))
 
 (deftest config-test

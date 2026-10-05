@@ -108,10 +108,10 @@
                     (assoc :edges [{:from "a" :to "b"}])))
         sections (map second (re-seq #"(?m)^### (.*)$" summary))]
     (is (= ["Violations" "Dependencies" "Complexity" "Modularity"
-            "I/O and mutability" "Error handling"]
+            "I/O and mutability" "Error handling" "Tests"]
           sections))
     (is (str/includes? summary "```mermaid\ngraph TD\n  b0[\"a\"]"))
-    (is (= 5 (count (re-seq #"<details><summary>What these metrics mean" summary)))
+    (is (= 6 (count (re-seq #"<details><summary>What these metrics mean" summary)))
       "a legend in each section")))
 
 (deftest brick-annotation-test
@@ -128,7 +128,7 @@
 
 (deftest comparison-section-order-test
   (is (= ["Violations" "Resolved" "Dependencies" "Complexity" "Modularity"
-          "I/O and mutability" "Error handling"]
+          "I/O and mutability" "Error handling" "Tests"]
         (map second (re-seq #"(?m)^### (.*)$"
                       (github-report/summary
                         (-> compared

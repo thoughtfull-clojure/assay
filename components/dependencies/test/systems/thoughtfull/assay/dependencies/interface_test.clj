@@ -76,7 +76,7 @@
               [(brick "lonely" :component (source 't.lonely.interface 10))]))]
     (is (= {:afferent 0 :efferent 0 :instability nil :abstractness 0.0
             :cohesion nil :shared-keywords 0 :libraries 0 :shared-libraries 0
-            :error-surface 0}
+            :error-surface 0 :untested-interface 1}
           (m "lonely")))))
 
 (deftest check-test
@@ -215,6 +215,36 @@
           (filter #(= :broad-catch (:metric %)))
           (map (juxt (comp :name :brick) :location :message))))
     "components only: bases are where catching belongs"))
+
+(deftest tests-test
+  (let [defs (fn [& names] (vec (for [n names] {:name n :line 1})))
+        analysis (dependencies/analyze workspace
+                   [{:brick {:name "a" :type :component}
+                     :metrics {}
+                     :sources [{:ns 't.a.interface :file "a/interface.clj"
+                                :requires [] :definitions (defs 'f 'g 'h)}
+                               {:ns 't.a.core :file "a/core.clj" :requires []
+                                :definitions (defs 'impl)}]
+                     :tests [{:ns 't.a.interface-test :file "a/interface_test.clj"
+                              :requires [{:ns 't.a.interface :as 'a :line 2}]
+                              :references #{'a/f 'is}}]}
+                    {:brick {:name "b" :type :component}
+                     :metrics {}
+                     :sources [{:ns 't.b.interface :file "b/interface.clj"
+                                :requires [] :definitions []}]
+                     :tests [{:ns 't.b.core-test :file "b/core_test.clj"
+                              :requires [{:ns 't.a.interface :refer ['g] :line 2}
+                                         {:ns 't.a.core :line 3}]
+                              :references #{'g}}]}])]
+    (testing "interface definitions no test in the workspace mentions"
+      (is (= 1 (get-in (metrics-by-name analysis) ["a" :untested-interface]))
+        "f is mentioned in a's tests and g in b's; h in none"))
+    (testing "tests that require another brick's implementation"
+      (is (= [["b" {:file "b/core_test.clj" :line 3}
+               "requires t.a.core, inside a; test through its interface instead"]]
+            (->> (dependencies/check {} analysis)
+              (filter #(= :test-boundary (:metric %)))
+              (map (juxt (comp :name :brick) :location :message))))))))
 
 (deftest merge-candidates-test
   ;; s is used only by a, a component 10 times its size. a is used only by

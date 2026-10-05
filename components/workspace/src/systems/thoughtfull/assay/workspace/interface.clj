@@ -6,8 +6,8 @@
 (defn bricks
   "The bricks (components and bases) of the Polylith workspace at root, sorted
   by type then name. Each is a map of :name, :type (:component or :base),
-  :dir (relative to root), and :files, the brick's Clojure source files
-  under src, relative to root."
+  :dir (relative to root), :files, the brick's Clojure source files under
+  src, and :test-files, those under test, all relative to root."
   [root]
   (core/bricks root))
 

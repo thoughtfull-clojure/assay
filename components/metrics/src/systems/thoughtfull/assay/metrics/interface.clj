@@ -7,7 +7,8 @@
   "Measure a string of Clojure source from file (a path used for locations).
   Returns a map of :file, :ns and :requires (from its ns form, if any),
   :forms, :top-level-forms, :functions (each also has :ns), :definitions,
-  :keywords, :fragments, :mutable-state, :throws, and :catches.
+  :keywords, :fragments, :mutable-state, :throws, :catches, and :interop
+  (a count of Java interop forms).
 
   Each definition (def, defn, defmulti, and so on) is a map of :name (a
   symbol), :line, :references, the set of symbols in its body, and
@@ -22,13 +23,23 @@
   [file source]
   (core/measure-source file source))
 
+(defn measure-test-source
+  "Measure a string of Clojure test source from file. Returns a map of
+  :file, :ns and :requires (from its ns form), :forms, :tests (each
+  deftest as {:name :line :forms :assertions}, counting is and are),
+  :hazards (with-redefs, Thread/sleep, alter-var-root, and top-level
+  mutable state, each {:line :kind}), and :references, every symbol in
+  the file."
+  [file source]
+  (core/measure-test-source file source))
+
 (defn measure-brick
   "Measure every source file of brick (as returned by the workspace
   component), reading files relative to root. Returns a map of :brick,
   :metrics (metric key to number, or nil when undefined), :functions, and
   :sources (each source file's :file, :ns, :requires, :forms,
   :definitions, :keywords, :fragments, :mutable-state, :throws, and
-  :catches)."
+  :catches), and :tests, each test file as from measure-test-source."
   [root brick]
   (core/measure-brick root brick))
 
@@ -41,7 +52,7 @@
 (def sections
   "Report sections in order, each a map of :key, :label, and :columns, the
   columns (as in columns) it shows: dependencies, complexity, modularity,
-  and I/O and mutability."
+  I/O and mutability, error handling, and tests."
   core/sections)
 
 (defn format-value

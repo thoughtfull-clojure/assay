@@ -17,6 +17,8 @@
     shared libraries, those another brick also requires.
   - Error surface: a component's interface definitions that can throw,
     directly or through what they refer to.
+  - Untested interface: a component's interface definitions that no test
+    in the workspace mentions.
 
   Dependency rules map a check to a level (:error or :warning), or to nil to
   turn it off:
@@ -29,6 +31,8 @@
     dynamic vars, and alter-var-root calls, in components.
   - :broad-catch flags catch clauses for Exception, RuntimeException,
     Throwable, or Object in components.
+  - :test-boundary flags a require, in a brick's tests, of another brick's
+    namespace other than its interface.
 
   Five rules take settings as a map with :level:
 
@@ -60,7 +64,8 @@
   given the workspace's settings, a map of :top-namespace and
   :interface-ns. Returns a map of :bricks (measurements with :afferent,
   :efferent, :instability, :abstractness, :cohesion, :shared-keywords,
-  :libraries, :shared-libraries, and :error-surface added to :metrics), :libraries (each
+  :libraries, :shared-libraries, :error-surface, and :untested-interface
+  added to :metrics), :libraries (each
   library outside the workspace as {:library :bricks :requires}, most
   spread first), :edges (a vector of {:from brick-name :to brick-name
   :interface name :location {:file :line}}), and what check needs:

@@ -139,7 +139,15 @@
                       :mutable-state 0
                       :untyped-errors 0
                       :catches 0
-                      :broad-catches 0}
+                      :broad-catches 0
+                      :interop 0
+                      :interop-density 0.0
+                      :tests 0
+                      :assertions-per-test nil
+                      :forms-per-test nil
+                      :isolation-hazards 0
+                      :test-ratio 0.0}
+            :tests []
             :sources [{:file file :ns (quote c) :requires [] :forms 22
                        :definitions [{:name (quote simple) :line 2
                                       :references #{(quote x)}
@@ -153,6 +161,31 @@
             (update :sources (partial mapv #(dissoc % :keywords :fragments
                                               :mutable-state :throws
                                               :catches))))))))
+
+(deftest interop-test
+  (is (= 9 (:interop
+            (measure (str "(ns n (:import (java.io File)))\n"
+                       "(defn f [s] (.length s) (.-x s) (File. s) (new File s)\n"
+                       "  (Math/abs -1) java.io.File/separator (.. s trim length)\n"
+                       "  (String/.length s))\n"
+                       "(defn g [m] (str/join m) (inc m) (Foo/bar m) (a. m))\n"))))
+    "a static member of any class counts; str/join, inc, and a. don't"))
+
+(deftest measure-test-source-test
+  (let [t (metrics/measure-test-source "t.clj"
+            (str "(ns t (:require [clojure.test :refer [deftest is are]]\n"
+              "  [a.interface :as a]))\n"
+              "(def state (atom {}))\n"
+              "(deftest one (is (= 1 (a/f))) (is (a/g)))\n"
+              "(deftest ^:slow two\n"
+              "  (with-redefs [a/f (constantly 2)] (Thread/sleep 10)\n"
+              "    (are [x] (pos? x) 1 2)))\n"))]
+    (is (= [{:name 'one :line 4 :forms 14 :assertions 2}
+            {:name 'two :line 5 :forms 24 :assertions 1}]
+          (:tests t)))
+    (is (= [[3 :atom] [6 :sleep] [6 :with-redefs]]
+          (sort (map (juxt :line :kind) (:hazards t)))))
+    (is (contains? (:references t) 'a/g))))
 
 (deftest error-handling-test
   (let [source (measure (str "(ns n)\n"
@@ -216,7 +249,15 @@
           :error-surface nil
           :untyped-errors nil
           :catches nil
-          :broad-catches nil}
+          :broad-catches nil
+          :interop nil
+          :interop-density nil
+          :tests nil
+          :assertions-per-test nil
+          :forms-per-test nil
+          :isolation-hazards nil
+          :untested-interface nil
+          :test-ratio nil}
         (metrics/averages
           [{:brick {:type :component}
             :metrics {:files 1 :forms 10 :functions 1

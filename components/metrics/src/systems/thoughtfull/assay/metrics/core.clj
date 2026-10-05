@@ -69,6 +69,17 @@
     :section :io
     :label "Shared libraries"
     :description "Of those, libraries that another brick also requires."}
+   {:key :interop
+    :section :io
+    :label "Host interop"
+    :description (str "Java interop forms: method calls, field access,"
+                   " constructors, and static members.")}
+   {:key :interop-density
+    :section :io
+    :label "Interop density"
+    :description "Host interop forms per 100 forms."
+    :format :decimal
+    :precision 1}
    {:key :mutable-state
     :section :io
     :label "Mutable state"
@@ -91,7 +102,38 @@
    {:key :broad-catches
     :section :errors
     :label "Broad catches"
-    :description "catch clauses for Exception, Throwable, and the like."}])
+    :description "catch clauses for Exception, Throwable, and the like."}
+   {:key :tests
+    :section :tests
+    :label "Tests"
+    :description "deftest forms under test."}
+   {:key :assertions-per-test
+    :section :tests
+    :label "Assertions per test"
+    :description "Mean is and are assertions per deftest."
+    :format :decimal
+    :precision 1}
+   {:key :forms-per-test
+    :section :tests
+    :label "Forms per test"
+    :description "Mean forms per deftest."
+    :format :decimal
+    :precision 1}
+   {:key :untested-interface
+    :section :tests
+    :label "Untested interface"
+    :description "Interface definitions no test in the workspace mentions."
+    :components-only true}
+   {:key :isolation-hazards
+    :section :tests
+    :label "Isolation hazards"
+    :description (str "with-redefs, Thread/sleep, alter-var-root, and"
+                   " top-level mutable state in tests.")}
+   {:key :test-ratio
+    :section :tests
+    :label "Test ratio"
+    :description "Test forms per source form."
+    :format :decimal}])
 
 ;; Explanations are legend entries. Code and formulas are in backticks,
 ;; which reports render as code.
@@ -145,6 +187,16 @@
      " wrapped by one brick can be replaced or upgraded in one place; a"
      " library spread across bricks, such as a database driver, means a"
      " missing gateway component.")
+   :interop
+   (str "Java interop forms: method calls and field access (`.method`,"
+     " `.-field`, `..`), constructors (`Foo.`, `new`), and static members"
+     " (`Math/abs`, `File/separator`). Interop couples code to the host;"
+     " spread across bricks rather than wrapped in a few, it makes the"
+     " workspace harder to port, test, and read as Clojure.")
+   :interop-density
+   (str "Host interop forms per 100 forms, so that large and small bricks"
+     " compare fairly. A component that wraps a Java API is dense by"
+     " design; interop scattered through domain logic isn't.")
    :mutable-state
    (str "Top-level `atom`, `ref`, `agent`, and `volatile!` definitions,"
      " `^:dynamic` vars, and `alter-var-root` calls: state hidden from the"
@@ -166,7 +218,26 @@
    :broad-catches
    (str "`catch` clauses for `Exception`, `RuntimeException`, `Throwable`,"
      " or `Object`. In a component, a broad catch decides for every caller"
-     " what a failure means.")})
+     " what a failure means.")
+   :tests "`deftest` forms in the brick's `test` directory."
+   :assertions-per-test
+   (str "The mean number of `is` and `are` assertions per `deftest`. A test"
+     " with many assertions checks many things, so a failure says less"
+     " about what broke.")
+   :forms-per-test
+   (str "The mean size of a `deftest`, in forms. Large tests usually set up"
+     " a lot of state or check many behaviors at once.")
+   :untested-interface
+   (str "Interface definitions that no test anywhere in the workspace"
+     " mentions: API with no test at all. Bases have no interface.")
+   :isolation-hazards
+   (str "Things in tests that let tests affect each other or depend on"
+     " timing: `with-redefs`, `Thread/sleep`, `alter-var-root`, and"
+     " top-level atoms, refs, agents, volatiles, and dynamic vars.")
+   :test-ratio
+   (str "Test forms per source form. A crude measure of how much testing a"
+     " brick has; compare it with other bricks rather than aim for a"
+     " number.")})
 
 (def ^:private metric-index
   (into {} (map (juxt :key identity)) metrics))
@@ -185,7 +256,8 @@
                           [:complexity "Complexity"]
                           [:modularity "Modularity"]
                           [:io "I/O and mutability"]
-                          [:errors "Error handling"]]]
+                          [:errors "Error handling"]
+                          [:tests "Tests"]]]
          {:key key
           :label label
           :columns (filterv #(= key (:section %)) columns)})))
@@ -593,6 +665,34 @@
                       :class class
                       :broad? (contains? broad-exceptions class)}))}))
 
+;; Host interop
+
+(defn- class-name?
+  "True if s names a Java class, such as String or java.io.File: its last
+  dot-separated segment starts with an uppercase letter."
+  [s]
+  (boolean (some-> s (str/split #"\.") last first Character/isUpperCase)))
+
+(defn- interop?
+  "True if node is a symbol for Java interop: a method or field (.foo,
+  .-foo, ..), a constructor (Foo.), new, or a static member (Math/abs)."
+  [node]
+  (let [sym (token-value node)]
+    (and (symbol? sym)
+      (let [nm (name sym)
+            ns (namespace sym)]
+        (or (class-name? ns)
+          (and (nil? ns)
+            (or (= "new" nm)
+              (and (str/starts-with? nm ".") (< 1 (count nm)))
+              (and (str/ends-with? nm ".") (< 1 (count nm))
+                (class-name? (subs nm 0 (dec (count nm))))))))))))
+
+(defn- interop-count
+  [top-level]
+  (count (filter interop?
+           (mapcat #(tree-seq n/inner? parse/code-children %) top-level))))
+
 ;; Mutable state
 
 (def ^:private stateful-constructors
@@ -655,7 +755,8 @@
                       vec)
        :keywords (keywords top-level)
        :fragments (fragments top-level)
-       :mutable-state (vec (mutable-state top-level))}
+       :mutable-state (vec (mutable-state top-level))
+       :interop (interop-count top-level)}
       (error-handling top-level))))
 
 (defn- mean
@@ -663,27 +764,99 @@
   (when (seq xs)
     (/ (reduce + xs) (double (count xs)))))
 
+;; Tests
+
+(def ^:private hazard-heads
+  #{"with-redefs" "with-redefs-fn" "alter-var-root"})
+
+(defn- hazards
+  "Things in tests that let them affect each other or depend on timing,
+  each a map of :line and :kind."
+  [top-level]
+  (concat
+    (for [form top-level
+          node (tree-seq n/inner? parse/code-children form)
+          :let [head (first (parse/code-children node))
+                sym (when (= :list (n/tag node)) (some-> head token-value))]
+          :when (symbol? sym)
+          :let [kind (cond
+                       (hazard-heads (name sym)) (keyword (name sym))
+                       (= "Thread/sleep" (str sym)) :sleep)]
+          :when kind]
+      {:line (:row (meta node)) :kind kind})
+    (for [{:keys [line kind]} (mutable-state top-level)
+          :when (not= :alter-var-root kind)]
+      {:line line :kind kind})))
+
+(defn measure-test-source
+  [file source]
+  (let [forms (parse/parse-string source)
+        info (parse/ns-info forms)
+        top-level (parse/top-level-forms forms)
+        nodes (mapcat #(tree-seq n/inner? parse/code-children %) top-level)]
+    (merge
+      (select-keys info [:ns :requires])
+      {:file file
+       :forms (form-count forms)
+       :tests (vec (for [node top-level
+                         :when (= "deftest" (parse/head-symbol node))
+                         :let [body (tree-seq n/inner? parse/code-children
+                                      node)]]
+                     {:name (some-> (second (parse/code-children node))
+                              unwrap-meta token-value)
+                      :line (:row (meta node))
+                      :forms (count body)
+                      :assertions (count (filter #(#{"is" "are"}
+                                                   (parse/head-symbol %))
+                                           body))}))
+       :hazards (vec (hazards top-level))
+       :references (into #{} (comp (keep token-value) (filter symbol?))
+                     nodes)})))
+
+(defn- test-metrics
+  [files tests]
+  (let [deftests (mapcat :tests tests)
+        source-forms (reduce + (map :forms files))]
+    {:tests (count deftests)
+     :assertions-per-test (mean (map :assertions deftests))
+     :forms-per-test (mean (map :forms deftests))
+     :isolation-hazards (count (mapcat :hazards tests))
+     :test-ratio (when (pos? source-forms)
+                   (/ (reduce + (map :forms tests)) (double source-forms)))}))
+
 (defn measure-brick
   [root brick]
   (let [files (mapv #(measure-source % (slurp (io/file root %)))
                 (:files brick))
-        functions (vec (mapcat :functions files))]
+        tests (mapv #(measure-test-source % (slurp (io/file root %)))
+                (:test-files brick))
+        functions (vec (mapcat :functions files))
+        forms (reduce + (map :forms files))
+        interop (reduce + (map :interop files))]
     {:brick brick
-     :metrics {:files (count files)
-               :forms (reduce + (map :forms files))
-               :functions (count functions)
-               :mean-function-complexity (mean (map :complexity functions))
-               :mean-function-depth (mean (map :depth functions))
-               :mutable-state (count (mapcat :mutable-state files))
-               :untyped-errors (count (filter (comp #{:untyped :java} :kind)
-                                        (mapcat :throws files)))
-               :catches (count (mapcat :catches files))
-               :broad-catches (count (filter :broad? (mapcat :catches files)))}
+     :metrics (merge
+                {:files (count files)
+                 :forms forms
+                 :functions (count functions)
+                 :mean-function-complexity (mean (map :complexity functions))
+                 :mean-function-depth (mean (map :depth functions))
+                 :mutable-state (count (mapcat :mutable-state files))
+                 :untyped-errors (count (filter (comp #{:untyped :java} :kind)
+                                          (mapcat :throws files)))
+                 :catches (count (mapcat :catches files))
+                 :broad-catches (count (filter :broad? (mapcat :catches files)))
+                 :interop interop
+                 :interop-density (when (pos? forms)
+                                    (* 100 (/ interop (double forms))))}
+                (test-metrics files tests))
      :functions functions
      :sources (mapv #(select-keys % [:file :ns :requires :forms :definitions
                                      :keywords :fragments :mutable-state
                                      :throws :catches])
-                files)}))
+                files)
+     :tests (mapv #(select-keys % [:file :ns :requires :forms :tests :hazards
+                                   :references])
+              tests)}))
 
 (def ^:private labels
   {:brick (into {} (map (juxt :key :label)) metrics)

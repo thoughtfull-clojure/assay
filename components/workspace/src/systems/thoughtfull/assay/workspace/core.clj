@@ -20,16 +20,21 @@
     str
     (str/replace java.io.File/separatorChar \/)))
 
+(defn- clojure-files
+  [root dir]
+  (->> (file-seq dir)
+    (filter clojure-file?)
+    (map #(relative root %))
+    sort
+    vec))
+
 (defn- brick
   [root type ^java.io.File dir]
   {:name (.getName dir)
    :type type
    :dir (relative root dir)
-   :files (->> (file-seq (io/file dir "src"))
-            (filter clojure-file?)
-            (map #(relative root %))
-            sort
-            vec)})
+   :files (clojure-files root (io/file dir "src"))
+   :test-files (clojure-files root (io/file dir "test"))})
 
 (defn bricks
   [root]

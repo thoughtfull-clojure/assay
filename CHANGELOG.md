@@ -9,6 +9,14 @@ and assay follows [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+- Host interop, in the I/O and mutability section, counts Java method
+  calls, field access, constructors, and static members. Interop density
+  counts them per 100 forms.
+- A tests section of the reports, from each brick's `test` directory:
+  tests, assertions and forms per test, untested interface (interface
+  definitions no test mentions), isolation hazards (`with-redefs`,
+  `Thread/sleep`, and the like), and test ratio. The `:test-boundary`
+  rule warns about a test that requires another brick's implementation.
 - An error handling section of the reports, with error surface (interface
   definitions that can throw), untyped errors, catches, and broad
   catches. The `:broad-catch` rule warns about catching `Exception`,

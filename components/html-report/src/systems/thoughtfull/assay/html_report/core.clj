@@ -434,6 +434,8 @@ import('https://cdn.jsdelivr.net/npm/mermaid@11.17.2/dist/mermaid.esm.min.mjs')
                                   "none the base didn't have"])
    :mutable-state (constantly ["Mutable state" "none in components"])
    :broad-catch (constantly ["Broad catch" "none in components"])
+   :test-boundary (constantly ["Test boundary"
+                               "tests use other bricks' interfaces only"])
    :connascence-of-position
    (fn [{:keys [max]}]
      ["Connascence of position"

@@ -6,7 +6,7 @@
   (:require
    [systems.thoughtfull.assay.dependencies.names :as names]))
 
-(defn- resolver
+(defn resolver
   "A function from a symbol referenced in source to [namespace name], or
   nil if it doesn't refer to a definition in a known namespace."
   [{:keys [ns requires definitions]}]

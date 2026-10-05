@@ -301,6 +301,19 @@ what the other bricks need, in their terms rather than the library's. Some
 libraries are fine anywhere: a logging library, say, or a small utility.
 Raise `:max-bricks`, or accept the warnings, for those.
 
+### Host interop
+
+Java interop couples code to the host: method calls, field access,
+constructors, and static members such as `System/getenv`. A component
+that wraps a Java API is dense with interop by design. Interop spread
+through domain logic is harder to test, harder to read as Clojure, and
+harder to port to another host, such as ClojureScript.
+
+Interop density, interop forms per 100 forms, compares bricks of
+different sizes. A brick that stands out is worth a look: move its
+interop behind a small set of functions, or into a component whose job
+is the Java API, so the rest works with Clojure data.
+
 ### Mutable state
 
 A top-level atom, ref, agent, or volatile is state that every function in
@@ -358,6 +371,55 @@ Catch the specific failure you can handle, such as
 code that knows what to do. A component that wraps a library sometimes
 has to catch broadly, to turn the library's exceptions into its own;
 then rethrow them as typed `ex-info` with the original as the cause.
+
+## Test metrics
+
+Assay reads each brick's `test` directory too. These metrics don't say
+whether tests pass or what they cover line by line; they show the shape
+of the tests.
+
+### Focused tests
+
+Assertions per test and forms per test are means over a brick's
+`deftest` forms. A test with many assertions checks many behaviors, so
+when it fails, its name says little about what broke, and the first
+failure hides the rest. A large test usually builds a lot of state to
+check one thing, which makes it slow to read and easy to break. Split it
+into tests that each check one behavior, with names that say which, and
+move shared setup into functions.
+
+### Untested interface
+
+An interface definition that no test anywhere in the workspace mentions
+has no test at all, not even an indirect one through another brick. The
+interface is what other bricks rely on, so it's where tests matter
+most. Add a test through the interface, or, if nothing uses the
+definition, remove it.
+
+### Isolation hazards
+
+Good tests don't affect each other. `with-redefs` and `alter-var-root`
+change a var for every thread, so tests that run in parallel, or that
+fail before restoring it, leak into each other. A top-level atom in a
+test namespace carries state from one test to the next. `Thread/sleep`
+makes a test depend on timing, so it's slow, and flaky when the machine
+is busy. Pass dependencies in as arguments instead of redefining them,
+create state inside each test, and wait on a condition rather than a
+duration.
+
+### Test boundary
+
+A test that requires another brick's implementation namespace, rather
+than its interface, breaks whenever that implementation changes, even
+when its interface hasn't. It also tests the other brick from the wrong
+side. Assay warns about each such require. Test through the interface,
+or move the test to the brick it tests.
+
+### Test ratio
+
+Test forms per source form gives a crude sense of how much testing a
+brick has. There's no right number, but a brick far below the others is
+worth a look.
 
 ## Connascence
 

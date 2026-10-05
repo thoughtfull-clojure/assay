@@ -6,7 +6,8 @@
    [systems.thoughtfull.assay.dependencies.connascence :as connascence]
    [systems.thoughtfull.assay.dependencies.errors :as errors]
    [systems.thoughtfull.assay.dependencies.libraries :as libraries]
-   [systems.thoughtfull.assay.dependencies.names :as names]))
+   [systems.thoughtfull.assay.dependencies.names :as names]
+   [systems.thoughtfull.assay.dependencies.tests :as tests]))
 
 (def default-rules
   {:stable-dependencies :error
@@ -18,7 +19,8 @@
                :max-bricks-per-commit 5 :level :warning}
    :library-spread {:max-bricks 1 :level :warning}
    :mutable-state :warning
-   :broad-catch :warning})
+   :broad-catch :warning
+   :test-boundary :warning})
 
 (defn merge-rules
   "Merge configured rules over the defaults. A map-valued rule merges key
@@ -94,7 +96,8 @@
         cohesion-analysis (cohesion/analyze workspace measurements)
         shared-keywords (connascence/shared-keywords measurements)
         library-analysis (libraries/analyze top-namespace measurements)
-        error-metrics (errors/analyze workspace measurements)]
+        error-metrics (errors/analyze workspace measurements)
+        test-metrics (tests/analyze workspace measurements)]
     {:edges edges
      :workspace workspace
      :used (:used cohesion-analysis)
@@ -109,6 +112,7 @@
                    (get-in cohesion-analysis [:metrics brick-name])
                    (get-in library-analysis [:metrics brick-name])
                    (error-metrics brick-name)
+                   (test-metrics brick-name)
                    {:shared-keywords (shared-keywords brick-name)})))}))
 
 ;; Checks
@@ -233,7 +237,7 @@
   (let [{:keys [stable-dependencies
                 connascence-of-position duplicate-code
                 merge-candidates co-change library-spread
-                mutable-state broad-catch]} rules]
+                mutable-state broad-catch test-boundary]} rules]
     (vec (concat
            (when stable-dependencies
              (stable-dependency-violations stable-dependencies analysis))
@@ -251,7 +255,9 @@
            (when mutable-state
              (mutable-state-violations mutable-state analysis))
            (when broad-catch
-             (broad-catch-violations broad-catch analysis))))))
+             (broad-catch-violations broad-catch analysis))
+           (when test-boundary
+             (tests/violations test-boundary analysis))))))
 
 (defn neighbors
   [bricks edges]

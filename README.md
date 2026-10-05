@@ -14,7 +14,8 @@ matter and what to do about them, see [Using assay's metrics](docs/metrics.md).
 ## Metrics
 
 Assay measures each component and base from the Clojure files under its
-`src` directory, at three levels.
+`src` directory, at three levels, and its tests from the files under its
+`test` directory.
 
 ### Functions
 
@@ -114,6 +115,8 @@ from source.
 | --- | --- |
 | Libraries | Libraries outside the workspace that the brick requires |
 | Shared libraries | Of those, libraries that another brick also requires |
+| Host interop | Java method calls, field access, constructors, and static members |
+| Interop density | Host interop forms per 100 forms |
 | Mutable state | Top-level atoms, refs, agents, volatiles, dynamic vars, and `alter-var-root` calls |
 
 Assay names a library by its namespaces: `next.jdbc` and `next.jdbc.sql`
@@ -140,6 +143,21 @@ counts as typed when its literal data map has a `:type` key, in any
 namespace, or `:cognitect.anomalies/category`. Rethrows, and data that
 isn't a literal map, don't count either way.
 
+### Test metrics
+
+| Metric | Meaning |
+| --- | --- |
+| Tests | `deftest` forms |
+| Assertions per test | Mean `is` and `are` assertions per `deftest` |
+| Forms per test | Mean forms per `deftest` |
+| Untested interface | Interface definitions that no test in the workspace mentions |
+| Isolation hazards | `with-redefs`, `Thread/sleep`, `alter-var-root`, and top-level mutable state in tests |
+| Test ratio | Test forms per source form |
+
+A test mentions an interface definition when it refers to it through an
+alias or a refer, so a test in any brick counts. Line coverage needs the
+tests to run, so assay doesn't measure it.
+
 ## Usage
 
 Run assay from the workspace root:
@@ -162,14 +180,14 @@ Reports list only error-level violations unless you pass `--warnings`,
 and count the warnings they leave out. Warnings point to code worth
 refactoring before it reaches an error, but they never fail a run.
 
-After the violations, the HTML and GitHub reports have five sections:
+After the violations, the HTML and GitHub reports have six sections:
 dependencies (the graph, afferent and efferent coupling, and instability),
 complexity (size and function complexity), modularity (abstractness,
 cohesion, and shared keywords), I/O and mutability (libraries, with a
-table of those more than one brick requires, and mutable state), and
-error handling. Each has a table of every brick, with a row of averages
-across all bricks. With `--base`, a changed brick's values
-show how much they changed, such as `12 (+3)`. The tables mark each value
+table of those more than one brick requires, host interop, and mutable
+state), error handling, and tests. Each has a table of every brick, with
+a row of averages across all bricks. With `--base`, a changed brick's
+values show how much they changed, such as `12 (+3)`. The tables mark each value
 2 or more standard deviations from the mean of all bricks: the HTML report
 outlines it, and the GitHub report sets it in bold. Afferent coupling,
 instability, and abstractness compare components only, since a base has no
@@ -216,6 +234,7 @@ Assay reads `assay.edn` at the workspace root, or the file you pass to
                     :library-spread {:max-bricks 1 :level :warning}
                     :mutable-state :warning
                     :broad-catch :warning
+                    :test-boundary :warning
                     :co-change {:since "12 months" :min-shared 5
                                 :min-strength 0.5 :max-bricks-per-commit 5
                                 :level :warning}}
@@ -252,6 +271,9 @@ Dependency rules set a level, or `nil` to turn a check off:
 - `:broad-catch`: a `catch` clause for `Exception`, `RuntimeException`,
   `Throwable`, or `Object` in a component. Bases, at the edges, are where
   catching belongs.
+- `:test-boundary`: a test that requires another brick's namespace other
+  than its interface. Tests that reach into an implementation break when
+  it changes, even though its interface didn't.
 - `:connascence-of-position`, with `:max`: an interface function that other
   bricks call has more than `:max` positional parameters.
 - `:duplicate-code`, with `:min-forms`: code of at least `:min-forms` forms

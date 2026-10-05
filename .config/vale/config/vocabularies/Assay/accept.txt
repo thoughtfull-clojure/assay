@@ -27,3 +27,4 @@ Ousterhout
 Tornhill
 (?i)untyped
 [Rr]ethrows?
+(?i)interop
