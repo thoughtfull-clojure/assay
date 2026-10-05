@@ -99,3 +99,15 @@
     (is (str/includes? summary "</details>\n\n### Functions")
       "the bricks legend closes before the functions section")
     (is (str/includes? summary "| Parameters | Positional parameters"))))
+
+(deftest brick-annotation-test
+  (is (= [(str "::warning file=components/a/deps.edn,line=1,"
+            "title=component a%3A Mean function complexity::"
+            "Mean function complexity 9 is too high")]
+        (github-report/annotations
+          {:violations [{:brick {:name "a" :type :component
+                                 :dir "components/a"}
+                         :metric :mean-function-complexity
+                         :level :warning
+                         :message "9 is too high"}]}))
+    "a violation of a whole brick is anchored to the brick's deps.edn"))

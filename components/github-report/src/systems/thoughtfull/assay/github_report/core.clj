@@ -32,9 +32,18 @@
     "notice"
     (name level)))
 
+(defn- annotation-location
+  "Where to anchor a violation: its own location, or for a violation of a
+  whole brick, the first line of the brick's deps.edn."
+  [{:keys [brick location]}]
+  (cond
+    (:file location) location
+    (:dir brick) {:file (str (:dir brick) "/deps.edn") :line 1}))
+
 (defn- annotation
-  [{:keys [brick message location status] :as violation}]
-  (let [props (cond-> []
+  [{:keys [brick message status] :as violation}]
+  (let [location (annotation-location violation)
+        props (cond-> []
                 (:file location) (conj (str "file=" (escape-property
                                                       (:file location))))
                 (:line location) (conj (str "line=" (:line location)))
@@ -42,7 +51,7 @@
                                               (str (brick-label brick) ": "
                                                 (metrics/label violation))))))
         text (str (metrics/label violation) " " message
-               (when (:name location) (str " (" (:name location) ")"))
+               (when-let [n (:name (:location violation))] (str " (" n ")"))
                (when (#{:existing :indirect} status)
                  (str " [" (name status) "]")))]
     (str "::" (annotation-command violation) " " (str/join "," props) "::"
