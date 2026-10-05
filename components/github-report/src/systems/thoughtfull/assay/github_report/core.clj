@@ -232,15 +232,15 @@
         "\n\n" (legend metrics/function-metrics)))))
 
 (defn- dependencies-section
-  [{:keys [bricks edges]}]
+  "The brick graph as a Mermaid diagram, which GitHub renders."
+  [{:keys [bricks edges violations]}]
   (when (seq edges)
     (str "### Dependencies\n\n"
-      (table ["Brick" "Depends on" "Depended on by"]
-        (for [{:keys [brick depends-on depended-on-by]}
-              (dependencies/neighbors bricks edges)]
-          [(brick-label brick)
-           (str/join ", " depends-on)
-           (str/join ", " depended-on-by)])))))
+      "Red: a dependency on a less stable brick, or a cycle. Dashed: new"
+      " since the base.\n\n"
+      "```mermaid\n"
+      (dependencies/mermaid bricks edges violations)
+      "\n```")))
 
 (defn summary
   [report]

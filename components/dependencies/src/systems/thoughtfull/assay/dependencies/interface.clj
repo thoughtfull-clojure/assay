@@ -72,3 +72,10 @@
   edges."
   [bricks edges]
   (core/neighbors bricks edges))
+
+(defn mermaid
+  "A Mermaid flowchart of the brick graph, top-down. Bases have rounded
+  ends. Edges in a stable-dependencies or cycle violation are red, and new
+  dependencies (from comparing with a base) are dashed."
+  [bricks edges violations]
+  (core/mermaid bricks edges violations))

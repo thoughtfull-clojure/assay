@@ -206,3 +206,23 @@
           {:brick {:name "b"} :depends-on [] :depended-on-by ["a"]}]
         (dependencies/neighbors [{:brick {:name "a"}} {:brick {:name "b"}}]
           [{:from "a" :to "c"} {:from "a" :to "b"} {:from "a" :to "b"}]))))
+
+(deftest mermaid-test
+  (is (= (str "graph TD\n"
+           "  b0([\"cli\"])\n"
+           "  b1[\"a\"]\n"
+           "  b2[\"b\"]\n"
+           "  b0 --> b1\n"
+           "  b1 -.-> b2\n"
+           "  b2 --> b1\n"
+           "  linkStyle 1 stroke:#d1242f,stroke-width:2px\n"
+           "  linkStyle 2 stroke:#d1242f,stroke-width:2px")
+        (dependencies/mermaid
+          [{:brick {:name "cli" :type :base}}
+           {:brick {:name "a" :type :component}}
+           {:brick {:name "b" :type :component}}]
+          [{:from "cli" :to "a"} {:from "a" :to "b"} {:from "b" :to "a"}
+           {:from "cli" :to "a"}]
+          [{:metric :dependency-cycle :brick {:name "a"} :subject "a, b"}
+           {:metric :dependency-cycle :brick {:name "b"} :subject "a, b"}
+           {:metric :new-dependency :brick {:name "a"} :subject "b"}]))))

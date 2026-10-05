@@ -47,6 +47,11 @@ Assay builds the dependency graph between bricks from `ns` requires. A
 brick depends on an interface, and so on every component that implements
 it.
 
+Both reports draw the graph with Mermaid. Red edges depend on a less
+stable brick or form a cycle, and with `--base`, dashed edges are new.
+The HTML report loads Mermaid from a CDN; offline, it shows the same
+dependencies as a table.
+
 | Metric | Meaning |
 | --- | --- |
 | Afferent (Ca) | Bricks that depend on this brick |

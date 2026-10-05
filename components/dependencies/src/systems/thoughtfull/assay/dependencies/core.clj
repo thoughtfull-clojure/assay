@@ -236,3 +236,47 @@
       {:brick brick
        :depends-on (names (uses brick-name) :to)
        :depended-on-by (names (used-by brick-name) :from)})))
+
+;; Graph
+
+(defn- problem-edges
+  "Edges to draw in red: stable-dependency violations and cycles, as
+  [from to] pairs."
+  [violations]
+  (into #{}
+    (mapcat (fn [{:keys [metric brick subject]}]
+              (case metric
+                :stable-dependencies [[(:name brick) subject]]
+                :dependency-cycle (let [members (set (str/split subject #", "))]
+                                    (for [to members
+                                          :when (not= to (:name brick))]
+                                      [(:name brick) to]))
+                nil)))
+    violations))
+
+(defn- node
+  [id {:keys [name type]}]
+  (if (= :base type)
+    (str "  " id "([\"" name "\"])")
+    (str "  " id "[\"" name "\"]")))
+
+(defn mermaid
+  [bricks edges violations]
+  (let [ids (into {} (map-indexed (fn [i {:keys [brick]}]
+                                    [(:name brick) (str "b" i)])
+                       bricks))
+        pairs (distinct (map (juxt :from :to) edges))
+        red (problem-edges violations)
+        new-edges (into #{} (comp (filter #(= :new-dependency (:metric %)))
+                              (map (juxt (comp :name :brick) :subject)))
+                    violations)]
+    (str/join "\n"
+      (concat
+        ["graph TD"]
+        (map #(node (ids (:name (:brick %))) (:brick %)) bricks)
+        (for [[from to] pairs]
+          (str "  " (ids from) (if (new-edges [from to]) " -.-> " " --> ")
+            (ids to)))
+        (for [[i pair] (map-indexed vector pairs)
+              :when (red pair)]
+          (str "  linkStyle " i " stroke:#d1242f,stroke-width:2px"))))))

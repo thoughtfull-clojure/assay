@@ -95,6 +95,10 @@ p.none { color: var(--muted); }
 .down { color: var(--ok); }
 tr.total td { font-weight: 600; border-top: 2px solid var(--border); }
 details.legend { margin-top: 12px; }
+details.dependency-table .scroll { margin-top: 12px; }
+pre.mermaid { background: none; margin: 0; text-align: center; }
+pre.mermaid:not([data-processed]) { visibility: hidden; height: 0; }
+.graph-key { color: var(--muted); font-size: 13px; margin: 0 0 8px; }
 details.legend summary { cursor: pointer; color: var(--muted); font-size: 13px; }
 details.legend dl {
   display: grid; grid-template-columns: max-content 1fr; gap: 6px 16px;
@@ -309,14 +313,44 @@ details.legend dd code {
 
 (defn- dependencies-table
   [bricks edges]
+  (table ["Brick" "Depends on" "Depended on by"]
+    (for [{:keys [brick depends-on depended-on-by]}
+          (dependencies/neighbors bricks edges)]
+      [(brick-cell brick)
+       (str/join ", " depends-on)
+       (str/join ", " depended-on-by)])))
+
+(def ^:private mermaid-script
+  "Render .mermaid blocks with Mermaid from a CDN, in the page's color
+  scheme. If it can't load, open the dependency table instead."
+  "
+import('https://cdn.jsdelivr.net/npm/mermaid@12.1.0/dist/mermaid.esm.min.mjs')
+  .then(async ({default: mermaid}) => {
+    const dark = matchMedia('(prefers-color-scheme: dark)').matches;
+    mermaid.initialize({startOnLoad: false, theme: dark ? 'dark' : 'default'});
+    await mermaid.run({querySelector: 'pre.mermaid'});
+  })
+  .catch(() => {
+    document.querySelectorAll('details.dependency-table')
+      .forEach((d) => { d.open = true; });
+  });
+")
+
+(defn- dependencies-section
+  "The brick graph, drawn by Mermaid, with the same information as a
+  collapsed table that opens if Mermaid can't load."
+  [{:keys [bricks edges violations]}]
   (if (empty? edges)
     [:p {:class "none"} "No dependencies between bricks."]
-    (table ["Brick" "Depends on" "Depended on by"]
-      (for [{:keys [brick depends-on depended-on-by]}
-            (dependencies/neighbors bricks edges)]
-        [(brick-cell brick)
-         (str/join ", " depends-on)
-         (str/join ", " depended-on-by)]))))
+    (list
+      [:p {:class "graph-key"}
+       "Red: a dependency on a less stable brick, or a cycle."
+       " Dashed: new since the base."]
+      [:pre {:class "mermaid"} (dependencies/mermaid bricks edges violations)]
+      [:details {:class "legend dependency-table"}
+       [:summary "Dependencies as a table"]
+       (dependencies-table bricks edges)]
+      [:script {:type "module"} (->Raw mermaid-script)])))
 
 ;; Thresholds
 
@@ -416,7 +450,7 @@ details.legend dd code {
       (changes-table bricks comparison))))
 
 (defn- sections
-  [{:keys [bricks edges violations comparison] :as report}]
+  [{:keys [bricks violations comparison] :as report}]
   (list
     (summary-tiles report)
     [:h2 "Violations"]
@@ -429,7 +463,7 @@ details.legend dd code {
     (functions-table bricks violations 15)
     (legend metrics/function-metrics)
     [:h2 "Dependencies"]
-    (dependencies-table bricks edges)
+    (dependencies-section report)
     (thresholds-section report)))
 
 (defn render
