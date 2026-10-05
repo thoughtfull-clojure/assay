@@ -1,10 +1,24 @@
-(ns systems.thoughtfull.assay.thresholds.core)
+(ns systems.thoughtfull.assay.thresholds.core
+  (:require
+   [clojure.string :as str]))
 
-(def default-thresholds
-  {:max-function-complexity [{:rule :max :value 10 :level :error}]
-   :max-nesting-depth [{:rule :max :value 8 :level :warning}]
-   :cyclomatic-complexity [{:rule :std-devs :value 2 :level :warning}]
-   :lines [{:rule :std-devs :value 2 :level :warning}]})
+(def default-config
+  {:brick-thresholds
+   {:mean-function-complexity [{:rule :std-devs :value 2 :level :warning}]
+    :abstractness [{:rule :min :value 0.5 :level :warning
+                    :types #{:component}}]}
+   :function-thresholds
+   {:complexity [{:rule :max :value 10 :level :error}]
+    :depth [{:rule :max :value 8 :level :warning}]
+    :forms [{:rule :max :value 150 :level :warning}]
+    :params [{:rule :max :value 4 :level :warning}]}})
+
+(defn merge-config
+  [config]
+  {:brick-thresholds (merge (:brick-thresholds default-config)
+                       (:brick-thresholds config))
+   :function-thresholds (merge (:function-thresholds default-config)
+                          (:function-thresholds config))})
 
 (defn- mean
   [xs]
@@ -21,7 +35,7 @@
   [x]
   (if (== x (Math/rint x))
     (str (long x))
-    (format "%.1f" (double x))))
+    (str/replace (format "%.2f" (double x)) #"\.?0+$" "")))
 
 (defmulti evaluate
   "Evaluate rule against a brick's value and its peers' values. Returns nil
@@ -76,22 +90,68 @@
                   (some? v))]
       v)))
 
-(defn check
+(defn- applies?
+  [rule brick]
+  (or (nil? (:types rule)) (contains? (:types rule) (:type brick))))
+
+(defn- brick-violations
   [thresholds measurements]
-  (vec
-    (for [measurement measurements
-          [metric rules] thresholds
-          rule rules
-          :let [value (get-in measurement [:metrics metric])
-                result (when (some? value)
-                         (evaluate rule value
-                           (peer-values measurements measurement metric)))]
-          :when result]
-      (cond-> (merge {:brick (:brick measurement)
-                      :metric metric
-                      :value value
-                      :rule rule
-                      :level (:level rule :error)}
-                result)
-        (get-in measurement [:locations metric])
-        (assoc :location (get-in measurement [:locations metric]))))))
+  (for [measurement measurements
+        [metric rules] thresholds
+        rule rules
+        :let [brick (:brick measurement)
+              value (get-in measurement [:metrics metric])
+              result (when (and (some? value) (applies? rule brick))
+                       (evaluate rule value
+                         (peer-values measurements measurement metric)))]
+        :when result]
+    (cond-> (merge {:scope :brick
+                    :brick brick
+                    :metric metric
+                    :value value
+                    :rule rule
+                    :level (:level rule :error)}
+              result)
+      (get-in measurement [:locations metric])
+      (assoc :location (get-in measurement [:locations metric])))))
+
+(def ^:private function-rules
+  #{:max :min})
+
+(defn- check-function-rule
+  [metric rule]
+  (when-not (function-rules (:rule rule))
+    (throw (ex-info (str "Function thresholds support only :max and :min, not "
+                      (pr-str (:rule rule)) " (for " metric ")")
+             {:metric metric :rule rule}))))
+
+(defn- function-violations
+  [thresholds measurements]
+  (doseq [[metric rules] thresholds
+          rule rules]
+    (check-function-rule metric rule))
+  (for [{:keys [brick functions]} measurements
+        function functions
+        [metric rules] thresholds
+        rule rules
+        :let [value (get function metric)
+              result (when (some? value) (evaluate rule value nil))]
+        :when result]
+    (merge {:scope :function
+            :brick brick
+            :metric metric
+            :value value
+            :rule rule
+            :level (:level rule :error)
+            :subject (:name function)
+            :location {:file (:file function)
+                       :line (if (= :depth metric)
+                               (:depth-line function)
+                               (:line function))
+                       :name (:name function)}}
+      result)))
+
+(defn check
+  [{:keys [brick-thresholds function-thresholds]} measurements]
+  (vec (concat (brick-violations brick-thresholds measurements)
+         (function-violations function-thresholds measurements))))

@@ -8,6 +8,7 @@
                           "components/github-report/src"
                           "components/git/src"
                           "components/baseline/src"
+                          "components/dependencies/src"
                           "components/text-report/src"
                           "bases/cli/src"]
            :test-paths ["components/workspace/test"
@@ -18,5 +19,6 @@
                         "components/github-report/test"
                         "components/git/test"
                         "components/baseline/test"
+                        "components/dependencies/test"
                         "components/text-report/test"
                         "bases/cli/test"]}]}

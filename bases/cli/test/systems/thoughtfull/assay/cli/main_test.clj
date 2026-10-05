@@ -40,7 +40,7 @@
         summary (io/file root "summary.md")]
     (doto (io/file root ".config/assay.edn")
       (io/make-parents)
-      (spit "{:thresholds {:max-function-complexity [{:rule :max :value 2}]}}"))
+      (spit "{:function-thresholds {:complexity [{:rule :max :value 2}]}}"))
     (testing "defaults to github format in GitHub Actions"
       (let [[status out] (run ["-w" (str root)]
                            {"GITHUB_ACTIONS" "true"
@@ -74,7 +74,7 @@
 
 (deftest base-test
   (let [root (workspace)
-        config "{:thresholds {:max-function-complexity [{:rule :max :value 2}]}}"]
+        config "{:function-thresholds {:complexity [{:rule :max :value 2}]}}"]
     (doto (io/file root ".config/assay.edn")
       (io/make-parents)
       (spit config))
@@ -95,3 +95,30 @@
       (let [[status out] (run ["-w" (str root) "-f" "github" "-b" "main"] {})]
         (is (= 1 status))
         (is (str/includes? out "::error file=components/simple/src/simple.clj"))))))
+
+(defn- configure
+  [root config]
+  (doto (io/file root ".config/assay.edn")
+    (io/make-parents)
+    (spit config)))
+
+(deftest warnings-test
+  (let [root (workspace)]
+    (configure root (str "{:function-thresholds"
+                      " {:params [{:rule :max :value 0 :level :warning}]}}"))
+    (testing "hidden by default, but counted"
+      (let [[status out] (run ["-w" (str root) "-f" "text"] {})]
+        (is (= 0 status))
+        (is (not (str/includes? out "warning ")))
+        (is (str/includes? out "2 warnings hidden"))))
+    (testing "shown with --warnings"
+      (let [[_ out] (run ["-w" (str root) "-f" "text" "--warnings"] {})]
+        (is (str/includes? out "warning components/"))
+        (is (str/includes? out ", 2 warnings"))))))
+
+(deftest fail-on-new-without-base-test
+  (let [root (workspace)]
+    (configure root
+      "{:function-thresholds {:complexity [{:rule :max :value 2}]}}")
+    (is (= 1 (first (run ["-w" (str root) "-f" "text" "--fail-on" "new"] {})))
+      "without a base, every violation is new")))

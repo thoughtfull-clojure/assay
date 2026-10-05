@@ -8,6 +8,7 @@
    [clojure.string :as str]
    [clojure.tools.cli :as cli]
    [systems.thoughtfull.assay.baseline.interface :as baseline]
+   [systems.thoughtfull.assay.dependencies.interface :as dependencies]
    [systems.thoughtfull.assay.git.interface :as git]
    [systems.thoughtfull.assay.github-report.interface :as github-report]
    [systems.thoughtfull.assay.html-report.interface :as html-report]
@@ -37,6 +38,9 @@
     (str "Fail on error-level violations that are new or all (default: new"
       " with --base, otherwise all)")
     :validate [#{"new" "all"} "must be new or all"]]
+   [nil "--[no-]warnings"
+    "Report warning-level violations too (default: errors only)"
+    :default false]
    [nil "--[no-]fail" "Exit with status 1 when an error threshold is exceeded"
     :default true]
    ["-h" "--help" "Show this help"]])
@@ -65,10 +69,15 @@
 (defn- measure
   "Measure and check the workspace at root."
   [root config]
-  (let [rules (thresholds/merge-thresholds (:thresholds config))
-        bricks (mapv #(metrics/measure-brick root %) (workspace/bricks root))]
+  (let [rules (thresholds/merge-config config)
+        analysis (dependencies/analyze (workspace/config root)
+                   (mapv #(metrics/measure-brick root %)
+                     (workspace/bricks root)))
+        bricks (:bricks analysis)]
     {:bricks bricks
-     :violations (thresholds/check rules bricks)
+     :edges (:edges analysis)
+     :violations (into (thresholds/check rules bricks)
+                   (dependencies/check (:dependency-rules config) analysis))
      :thresholds rules}))
 
 (defn- temp-dir
@@ -95,7 +104,10 @@
               {:bricks [] :violations []})
             head
             (git/changed-files root rev)
-            (:changes config))
+            {:changes (:change-thresholds config)
+             :new-dependencies (:new-dependencies
+                                (merge dependencies/default-rules
+                                  (:dependency-rules config)))})
         (update :comparison assoc :base-ref ref :base-rev rev))
       (finally
         (delete-tree dir)))))
@@ -112,14 +124,16 @@
           head)
       (assoc :workspace (.getName root)
         :generated-at (str (java.time.Instant/now))
-        :changes (:changes config)))))
+        :change-thresholds (:change-thresholds config)
+        :dependency-rules (merge dependencies/default-rules
+                            (:dependency-rules config))))))
 
 (defn- failed?
   "True if report has an error-level violation within scope, \"new\" or
   \"all\". Without a base, every violation counts as new."
   [report scope]
   (some #(and (= :error (:level %))
-           (or (= "all" scope) (#{:new nil} (:status %))))
+           (or (= "all" scope) (contains? #{:new nil} (:status %))))
     (:violations report)))
 
 (defn- write-html
@@ -154,9 +168,23 @@
   (distinct (or (seq (:format options))
               [(if (env "GITHUB_ACTIONS") "github" "html")])))
 
+(defn- hide-warnings
+  "Remove warning-level violations from report, counting in
+  :hidden-warnings those a change introduced (or all, without a base)."
+  [report]
+  (let [warning? #(= :warning (:level %))
+        warnings (filter warning? (:violations report))]
+    (cond-> (assoc report
+              :violations (vec (remove warning? (:violations report)))
+              :hidden-warnings (count (filter #(contains? #{nil :new} (:status %))
+                                        warnings)))
+      (:comparison report)
+      (update-in [:comparison :resolved] #(vec (remove warning? %))))))
+
 (defn- execute
-  [{:keys [workspace config base fail fail-on] :as options} env]
-  (let [report (report workspace (read-config workspace config) base)]
+  [{:keys [workspace config base fail fail-on warnings] :as options} env]
+  (let [report (cond-> (report workspace (read-config workspace config) base)
+                 (not warnings) hide-warnings)]
     (doseq [format (formats options env)]
       ((writers format) report options env))
     (if (and fail (failed? report (or fail-on (if base "new" "all"))))

@@ -33,7 +33,8 @@
         changed #{"components/a/src/a.clj" "components/b/src/b.clj"
                   "components/d/src/d.clj"}
         result (baseline/compare-reports base head changed
-                 {:m [{:rule :max-increase :value 10 :level :warning}]})
+                 {:changes {:m [{:rule :max-increase :value 10
+                                 :level :warning}]}})
         by-status (fn [status]
                     (->> (:violations result)
                       (filter #(= status (:status %)))
@@ -60,10 +61,46 @@
                        {:bricks [(brick "a" {:m base-m})]}
                        {:bricks [(brick "a" {:m head-m})]}
                        #{"components/a/src/a.clj"}
-                       {:m [{:rule :max-increase-percent :value 50}]})
+                       {:changes {:m [{:rule :max-increase-percent
+                                       :value 50}]}})
                   :violations
                   (map :message)))]
     (is (= ["increased by 60% (10 to 16), above the maximum increase of 50%"]
           (check 10 16)))
     (is (empty? (check 10 15)))
     (is (empty? (check 0 15)))))
+
+(deftest function-violation-test
+  (let [f-violation (fn [subject]
+                      {:scope :function
+                       :brick {:name "a" :type :component}
+                       :metric :complexity
+                       :rule {:rule :max :value 10}
+                       :subject subject
+                       :level :error})
+        base {:bricks [{:brick {:name "a"}
+                        :functions [{:name "old" :complexity 11}]}]
+              :violations [(f-violation "old")]}
+        head {:bricks [(brick "a" {})]
+              :violations [(assoc (f-violation "old") :location {:line 99})
+                           (f-violation "new")]}
+        result (baseline/compare-reports base head #{"components/a/src/a.clj"}
+                 {})]
+    (is (= [["old" :existing 11] ["new" :new nil]]
+          (map (juxt :subject :status :base-value) (:violations result)))
+      "a function is matched by name, even when its line moves")))
+
+(deftest new-dependencies-test
+  (let [base {:bricks [] :edges [{:from "a" :to "b"}]}
+        head {:bricks [(brick "a" {})]
+              :edges [{:from "a" :to "b"}
+                      {:from "a" :to "c-impl" :interface "c"
+                       :location {:file "f.clj" :line 4}}]}
+        changed #{"components/a/src/a.clj"}]
+    (is (= [["a" "c-impl" :warning :new {:file "f.clj" :line 4}
+             "now depends on c-impl (through interface c)"]]
+          (map (juxt (comp :name :brick) :subject :level :status :location
+                 :message)
+            (:violations (baseline/compare-reports base head changed
+                           {:new-dependencies :warning})))))
+    (is (empty? (:violations (baseline/compare-reports base head changed {}))))))

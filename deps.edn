@@ -11,6 +11,7 @@
                 poly/github-report {:local/root "components/github-report"}
                 poly/git {:local/root "components/git"}
                 poly/baseline {:local/root "components/baseline"}
+                poly/dependencies {:local/root "components/dependencies"}
                 poly/text-report {:local/root "components/text-report"}
                 poly/cli {:local/root "bases/cli"}}}
 
@@ -24,6 +25,7 @@
                  "components/github-report/test"
                  "components/git/test"
                  "components/baseline/test"
+                 "components/dependencies/test"
                  "components/text-report/test"
                  "bases/cli/test"]
    :extra-deps {lambdaisland/kaocha {:mvn/version "1.91.1392"}}

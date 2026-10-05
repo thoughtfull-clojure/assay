@@ -49,8 +49,10 @@
       (:name brick))))
 
 (defn- violation-key
-  [{:keys [brick metric rule]}]
-  [(:name brick) metric rule])
+  "Identifies a violation across reports: a function or dependency is
+  identified by its :subject, not by its line, which moves."
+  [{:keys [brick metric rule subject]}]
+  [(:name brick) metric rule subject])
 
 (defn- status
   [base-keys changed violation]
@@ -58,6 +60,15 @@
     (base-keys (violation-key violation)) :existing
     (changed (:name (:brick violation))) :new
     :else :indirect))
+
+(defn- base-value
+  "The violation's metric in base: the brick's metric, or for a function
+  violation, the same function's."
+  [base-metrics base-functions {:keys [scope brick metric subject]}]
+  (case scope
+    :function (get-in base-functions [[(:name brick) subject] metric])
+    :dependency nil
+    (get-in base-metrics [(:name brick) metric])))
 
 (defn- change-violations
   [head base-metrics changed change-thresholds]
@@ -70,7 +81,8 @@
               result (when (some? value)
                        (evaluate-change rule base-value value))]
         :when result]
-    (cond-> (merge {:brick brick
+    (cond-> (merge {:scope :brick
+                    :brick brick
                     :metric metric
                     :value value
                     :base-value base-value
@@ -81,23 +93,47 @@
               result)
       (get locations metric) (assoc :location (get locations metric)))))
 
+(defn- new-dependency-violations
+  [base head level]
+  (when level
+    (let [base-edges (set (map (juxt :from :to) (:edges base)))
+          index (into {} (map (juxt (comp :name :brick) :brick)) (:bricks head))]
+      (for [{:keys [from to interface location]} (:edges head)
+            :when (not (base-edges [from to]))]
+        {:scope :dependency
+         :brick (index from)
+         :metric :new-dependency
+         :label "New dependency"
+         :subject to
+         :level level
+         :rule {:rule :new-dependencies}
+         :status :new
+         :location location
+         :message (str "now depends on " to
+                    (when (not= to interface)
+                      (str " (through interface " interface ")")))}))))
+
 (defn compare-reports
-  [base head changed-files change-thresholds]
+  [base head changed-files {:keys [changes new-dependencies]}]
   (let [changed (changed-bricks (:bricks head) changed-files)
         base-keys (set (map violation-key (:violations base)))
         head-keys (set (map violation-key (:violations head)))
         base-metrics (into {}
                        (map (juxt (comp :name :brick) :metrics))
                        (:bricks base))
+        base-functions (into {}
+                         (for [{:keys [brick functions]} (:bricks base)
+                               function functions]
+                           [[(:name brick) (:name function)] function]))
         violations (for [v (:violations head)]
                      (assoc v
                        :status (status base-keys changed v)
-                       :base-value (get-in base-metrics
-                                     [(:name (:brick v)) (:metric v)])))]
+                       :base-value (base-value base-metrics base-functions v)))]
     (assoc head
-      :violations (into (vec violations)
-                    (change-violations head base-metrics changed
-                      change-thresholds))
+      :violations (vec (concat violations
+                         (change-violations head base-metrics changed changes)
+                         (new-dependency-violations base head
+                           new-dependencies)))
       :comparison {:changed-bricks changed
                    :base-metrics base-metrics
                    :resolved (vec (remove (comp head-keys violation-key)

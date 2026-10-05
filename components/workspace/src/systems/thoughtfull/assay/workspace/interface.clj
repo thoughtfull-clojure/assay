@@ -10,3 +10,10 @@
   under src, relative to root."
   [root]
   (core/bricks root))
+
+(defn config
+  "The Polylith settings of the workspace at root that assay uses, from
+  workspace.edn: :top-namespace (a string, or nil) and :interface-ns
+  (default \"interface\")."
+  [root]
+  (core/config root))

@@ -11,9 +11,6 @@
   [source]
   (-> (measure source) :functions first :complexity))
 
-(deftest lines-test
-  (is (= 2 (:lines (measure "; comment\n\n(ns foo)\n  ;; more\n(def x 1)\n")))))
-
 (deftest forms-test
   (testing "counts forms at every depth"
     ;; list, defn, f, [x], x, (inc x), inc, x
@@ -86,13 +83,25 @@
           {:name "g" :file "f.clj" :line 3 :complexity 1}
           {:name "m" :file "f.clj" :line 4 :complexity 1}
           {:name "area :square" :file "f.clj" :line 5 :complexity 1}]
-        (:functions
-         (measure (str "(ns foo)\n"
-                    "(defn f [x] x)\n"
-                    "(defn- g [] nil)\n"
-                    "(defmacro m [x] x)\n"
-                    "(defmethod area :square [s] (* s s))\n"
-                    "(def not-a-function 1)\n"))))))
+        (map #(select-keys % [:name :file :line :complexity])
+          (:functions
+           (measure (str "(ns foo)\n"
+                      "(defn f [x] x)\n"
+                      "(defn- g [] nil)\n"
+                      "(defmacro m [x] x)\n"
+                      "(defmethod area :square [s] (* s s))\n"
+                      "(def not-a-function 1)\n")))))))
+
+(deftest function-measures-test
+  (let [f (fn [source]
+            (-> (measure source) :functions first
+              (select-keys [:depth :depth-line :forms :params])))]
+    (is (= {:depth 3 :depth-line 3 :forms 10 :params 1}
+          (f "(defn f\n  [x]\n  (g (h x)))")))
+    (testing "params counts the widest arity, without varargs"
+      (is (= 3 (:params (f "(defn f ([a] a) ([a b c & more] a))")))))
+    (testing "defmethod params skip the dispatch value"
+      (is (= 2 (:params (f "(defmethod m [:a :b] [x y] x)")))))))
 
 (deftest cyclomatic-complexity-test
   (testing "a function without branches"
@@ -136,16 +145,46 @@
               "(defn branchy [x] (if x (when x 1) 2))\n")))
     (is (= {:brick {:name "c" :files [file]}
             :metrics {:files 1
-                      :lines 3
-                      :top-level-forms 3
                       :forms 22
                       :functions 2
-                      :cyclomatic-complexity 4
+                      :mean-function-complexity 2.0
                       :max-function-complexity 3
                       :max-nesting-depth 3}
             :locations {:max-function-complexity
                         {:file file :line 3 :name "branchy"}
                         :max-nesting-depth {:file file :line 3
-                                            :name "branchy"}}}
+                                            :name "branchy"}}
+            :sources [{:file file :ns (quote c) :requires [] :forms 22}]}
           (dissoc (metrics/measure-brick root {:name "c" :files [file]})
             :functions)))))
+
+(deftest columns-test
+  (is (= ["Files" "Forms" "Functions" "Function complexity"]
+        (map :label (take 4 metrics/columns))))
+  (is (= "2.5 / 11"
+        (metrics/column-text (nth metrics/columns 3)
+          {:mean-function-complexity 2.46 :max-function-complexity 11})))
+  (is (= "0.33" (metrics/format-value :instability 1/3)))
+  (is (= "–" (metrics/format-value :instability nil))))
+
+(deftest totals-test
+  (is (= {:files 3
+          :forms 30
+          :functions 4
+          :mean-function-complexity 3.0
+          :max-function-complexity 6
+          :max-nesting-depth 5
+          :instability 0.5
+          :abstractness nil}
+        (metrics/totals
+          [{:metrics {:files 1 :forms 10 :functions 1
+                      :mean-function-complexity 6.0
+                      :max-function-complexity 6 :max-nesting-depth 5
+                      :instability 0.25}
+            :functions [{:complexity 6}]}
+           {:metrics {:files 2 :forms 20 :functions 3
+                      :mean-function-complexity 2.0
+                      :max-function-complexity 3 :max-nesting-depth 2
+                      :instability 0.75 :afferent 1}
+            :functions [{:complexity 1} {:complexity 2} {:complexity 3}]}]))
+    "the mean complexity is over all functions, not a mean of brick means"))

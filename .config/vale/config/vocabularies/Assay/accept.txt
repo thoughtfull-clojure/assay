@@ -1,5 +1,6 @@
 arity
 config
+destructuring
 devenv
 docstrings
 (?i)assay

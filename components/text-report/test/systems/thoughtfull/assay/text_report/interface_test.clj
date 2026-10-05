@@ -5,7 +5,7 @@
 
 (def ^:private violations
   [{:brick {:name "b" :type :base :dir "bases/b"}
-    :metric :lines
+    :metric :forms
     :level :warning
     :message "300 is too many"
     :status :new}
@@ -16,7 +16,7 @@
     :location {:file "components/a/src/a.clj" :line 7 :name "f"}
     :status :new}
    {:brick {:name "c" :type :component :dir "components/c"}
-    :metric :lines
+    :metric :forms
     :level :error
     :message "old news"
     :status :existing}])
@@ -24,8 +24,8 @@
 (deftest render-test
   (is (= (str "error   components/a/src/a.clj:7  Max function complexity 12 is"
            " above the maximum of 10 (f)\n"
-           "warning bases/b  Lines 300 is too many\n"
-           "assay: 3 bricks, 1 new error, 1 new warning compared with HEAD"
+           "warning bases/b  Forms 300 is too many\n"
+           "assay: 3 bricks, 1 new error, 1 new warning, compared with HEAD"
            " (1 not new, not shown)\n")
         (text-report/render {:bricks [{} {} {}]
                              :violations violations
@@ -34,3 +34,8 @@
 (deftest render-without-comparison-test
   (is (= "assay: 1 brick, 0 errors, 0 warnings\n"
         (text-report/render {:bricks [{}] :violations []}))))
+
+(deftest hidden-warnings-test
+  (is (= "assay: 2 bricks, 0 errors, 17 warnings hidden (--warnings to show)\n"
+        (text-report/render {:bricks [{} {}] :violations []
+                             :hidden-warnings 17}))))

@@ -68,7 +68,13 @@ h2 { font-size: 18px; margin: 40px 0 12px; }
 table { border-collapse: collapse; width: 100%; background: var(--surface); }
 th, td { padding: 8px 12px; text-align: left; border-bottom: 1px solid var(--border); }
 tr:last-child td { border-bottom: none; }
-th { font-size: 13px; font-weight: 600; color: var(--muted); white-space: nowrap; }
+th {
+  font-size: 13px; font-weight: 600; color: var(--muted);
+  vertical-align: bottom; line-height: 1.3;
+}
+th.num { min-width: 4.5em; }
+td.num { white-space: nowrap; }
+td:first-child > code, .brick-name, .type { white-space: nowrap; }
 td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 td.error { background: var(--error-bg); color: var(--error); font-weight: 600; }
 td.warning { background: var(--warning-bg); color: var(--warning); font-weight: 600; }
@@ -85,6 +91,23 @@ p.none { color: var(--muted); }
 .badge.new { background: var(--error-bg); color: var(--error); }
 .up { color: var(--error); }
 .down { color: var(--ok); }
+tr.total td { font-weight: 600; border-top: 2px solid var(--border); }
+details.legend { margin-top: 12px; }
+details.legend summary { cursor: pointer; color: var(--muted); font-size: 13px; }
+details.legend dl {
+  display: grid; grid-template-columns: max-content 1fr; gap: 6px 16px;
+  margin: 12px 0 0; font-size: 14px;
+}
+details.legend dt { font-weight: 600; }
+details.legend dd { margin: 0; color: var(--muted); }
+details.legend dd code {
+  color: var(--text); background: var(--bg); border: 1px solid var(--border);
+  border-radius: 4px; padding: 0 4px;
+}
+@media (max-width: 600px) {
+  details.legend dl { grid-template-columns: 1fr; }
+  details.legend dd { margin-bottom: 8px; }
+}
 ")
 
 (defn- worse
@@ -92,11 +115,12 @@ p.none { color: var(--muted); }
   (if (some #{:error} [a b]) :error (or a b)))
 
 (def ^:private labels
-  (into {} (map (juxt :key :label)) metrics/metrics))
+  {:brick (into {} (map (juxt :key :label)) metrics/metrics)
+   :function (into {} (map (juxt :key :label)) metrics/function-metrics)})
 
 (defn- label
-  [metric]
-  (labels metric (name metric)))
+  [{:keys [scope metric label]}]
+  (or label (get-in labels [(or scope :brick) metric]) (name metric)))
 
 (defn- introduced?
   "True for violations that a change introduced, or for every violation
@@ -113,6 +137,10 @@ p.none { color: var(--muted); }
   [class text]
   [:span {:class (str "badge " class)} text])
 
+(defn- level-badge
+  [level]
+  (badge (name level) (name level)))
+
 (defn- tile
   [class n text]
   [:div {:class (str "tile " class)}
@@ -121,36 +149,49 @@ p.none { color: var(--muted); }
 
 (defn- table
   "A scrolling table. Headers are strings or [attrs string]; rows are
-  sequences of cells, each content or [:td ...]."
+  sequences of cells, each content or [:td ...], with an optional :class in
+  their metadata."
   [headers rows]
   (let [th #(if (vector? %) [:th (first %) (second %)] [:th %])
         td #(if (and (vector? %) (= :td (first %))) % [:td %])]
     [:div {:class "scroll"}
      [:table
       [:thead [:tr (map th headers)]]
-      [:tbody (for [row rows] [:tr (map td row)])]]]))
+      [:tbody (for [row rows]
+                [:tr {:class (:class (meta row))} (map td row)])]]]))
+
+(defn- metric-headers
+  [registry]
+  (map (fn [{:keys [label description]}]
+         [{:class "num" :title description} label])
+    registry))
 
 (defn- brick-cell
+  "A brick's name and type, each kept on one line."
   [brick]
-  (list (:name brick) " " [:span {:class "type"} (name (:type brick))]))
+  (list [:span {:class "brick-name"} (:name brick)] " "
+    [:span {:class "type"} (name (:type brick))]))
 
 (def ^:private status-order
   {:new 0 nil 0 :indirect 1 :existing 2})
 
+;; Violations
+
 (defn- violations-table
-  [violations comparison]
+  [violations comparison hidden-warnings]
   (if (empty? violations)
-    [:p {:class "none"} "No thresholds exceeded."]
+    [:p {:class "none"}
+     (if hidden-warnings "No errors." "No thresholds exceeded.")]
     (table (cond-> ["Level" "Brick" "Metric" "Detail" "Location"]
              comparison (conj "Status"))
-      (for [{:keys [brick metric level message status] :as v}
+      (for [{:keys [brick level message status] :as v}
             (sort-by (juxt (comp status-order :status)
                        #(if (= :error (:level %)) 0 1)
                        (comp :name :brick))
               violations)]
-        (cond-> [(badge (name level) (name level))
+        (cond-> [(level-badge level)
                  (brick-cell brick)
-                 (label metric)
+                 (label v)
                  message
                  (location (:location v))]
           comparison (conj (badge (str "status " (name status))
@@ -159,99 +200,196 @@ p.none { color: var(--muted); }
 (defn- resolved-table
   [resolved]
   (table ["Brick" "Metric" "Detail"]
-    (for [{:keys [brick metric message]} resolved]
-      [(brick-cell brick) (label metric) message])))
+    (for [{:keys [brick message] :as v} resolved]
+      [(brick-cell brick) (label v) message])))
+
+;; Metrics
+
+(defn- delta-content
+  [k base head]
+  (let [text (partial metrics/format-value k)]
+    (cond
+      (nil? head) (text head)
+      (nil? base) (list (text head) " " [:span {:class "type"} "new"])
+      (= base head) (text head)
+      :else (list (text base) " → " (text head) " "
+              [:span {:class (if (> head base) "up" "down")}
+               "(" (if (> head base) "+" "") (text (- head base)) ")"]))))
 
 (defn- delta-cell
-  [base head]
-  (cond
-    (nil? head) [:td {:class "num"}]
-    (nil? base) [:td {:class "num"} head " " [:span {:class "type"} "new"]]
-    (= base head) [:td {:class "num"} head]
-    :else [:td {:class "num"}
-           base " → " head " "
-           [:span {:class (if (> head base) "up" "down")}
-            "(" (if (> head base) "+" "") (- head base) ")"]]))
+  [{:keys [keys]} base head]
+  [:td {:class "num"}
+   (interpose " / " (map #(delta-content % (get base %) (get head %)) keys))])
 
 (defn- changes-table
   [bricks {:keys [changed-bricks base-metrics]}]
   (let [changed (filter #(changed-bricks (:name (:brick %))) bricks)]
     (if (empty? changed)
       [:p {:class "none"} "No bricks changed."]
-      (table (into ["Brick"]
-               (map (fn [{:keys [label description]}]
-                      [{:class "num" :title description} label]))
-               metrics/metrics)
-        (for [{:keys [brick] :as m} changed
-              :let [base (base-metrics (:name brick))]]
-          (into [(brick-cell brick)]
-            (for [{k :key} metrics/metrics]
-              (delta-cell (get base k) (get-in m [:metrics k])))))))))
+      (table (cons "Brick" (metric-headers metrics/columns))
+        (for [{:keys [brick] :as m} changed]
+          (cons (brick-cell brick)
+            (for [column metrics/columns]
+              (delta-cell column (base-metrics (:name brick))
+                (:metrics m)))))))))
 
 (defn- flagged-cells
-  [violations]
+  "Map of a cell key, from cell-key, to the worst :level and the :messages
+  of the introduced violations of scope."
+  [violations scope cell-key]
   (reduce
-    (fn [acc {:keys [brick metric level message]}]
+    (fn [acc {:keys [level message] :as v}]
       (-> acc
-        (update-in [[(:name brick) metric] :level] worse level)
-        (update-in [[(:name brick) metric] :messages] (fnil conj []) message)))
+        (update-in [(cell-key v) :level] worse level)
+        (update-in [(cell-key v) :messages] (fnil conj []) message)))
     {}
-    (filter introduced? violations)))
+    (filter #(and (= scope (:scope % :brick)) (introduced? %)) violations)))
 
 (defn- metric-cell
-  [{:keys [level messages]} value]
+  [{:keys [level messages]} text]
   [:td {:class (str "num" (when level (str " " (name level))))
         :title (when messages (str/join "\n" messages))}
-   value])
+   text])
+
+(defn- column-flags
+  "The flags of a column's metrics combined: the worst level and every
+  message."
+  [flagged brick-name {:keys [keys]}]
+  (let [flags (keep #(flagged [brick-name %]) keys)]
+    (when (seq flags)
+      {:level (reduce worse nil (map :level flags))
+       :messages (vec (mapcat :messages flags))})))
 
 (defn- metrics-table
+  "The summary table: every brick, then a total row."
   [bricks violations]
-  (let [flagged (flagged-cells violations)]
-    (table (into ["Brick"]
-             (map (fn [{:keys [label description]}]
-                    [{:class "num" :title description} label]))
-             metrics/metrics)
-      (for [{:keys [brick] :as m} bricks]
-        (into [(brick-cell brick)]
-          (for [{k :key} metrics/metrics]
-            (metric-cell (flagged [(:name brick) k])
-              (get-in m [:metrics k]))))))))
+  (let [flagged (flagged-cells violations :brick
+                  (juxt (comp :name :brick) :metric))
+        totals (metrics/totals bricks)]
+    (table (cons "Brick" (metric-headers metrics/columns))
+      (concat
+        (for [{:keys [brick] :as m} bricks]
+          (cons (brick-cell brick)
+            (for [column metrics/columns]
+              (metric-cell (column-flags flagged (:name brick) column)
+                (metrics/column-text column (:metrics m))))))
+        [(with-meta
+           (cons "Total"
+             (for [column metrics/columns]
+               (metric-cell nil (metrics/column-text column totals))))
+           {:class "total"})]))))
+
+(defn- inline-code
+  "Text with `backticked` spans rendered as code."
+  [s]
+  (map-indexed (fn [i part] (if (odd? i) [:code part] part))
+    (str/split s #"`" -1)))
+
+(defn- legend
+  "A collapsed list explaining each entry of a metric registry."
+  [entries]
+  [:details {:class "legend"}
+   [:summary "What these metrics mean"]
+   [:dl (for [{:keys [label explanation]} entries]
+          (list [:dt label] [:dd (inline-code explanation)]))]])
+
+;; Functions
 
 (defn- functions-table
-  [bricks n]
-  (let [functions (->> bricks
+  "Functions that break a rule, then the most complex of the rest, up to n
+  in all."
+  [bricks violations n]
+  (let [flagged (flagged-cells violations :function
+                  (juxt (comp :name :brick) :subject :metric))
+        flagged-fns (set (map (comp vec (partial take 2)) (keys flagged)))
+        functions (->> bricks
                     (mapcat (fn [{:keys [brick functions]}]
                               (map #(assoc % :brick brick) functions)))
-                    (sort-by (juxt (comp - :complexity) :file :line))
-                    (take n))]
+                    (sort-by (juxt #(if (flagged-fns [(:name (:brick %))
+                                                      (:name %)])
+                                      0 1)
+                               (comp - :complexity) :file :line))
+                    (take (max n (count flagged-fns))))]
     (if (empty? functions)
       [:p {:class "none"} "No functions found."]
-      (table [[{:class "num"} "Complexity"] "Function" "Brick" "Location"]
-        (for [{:keys [complexity name brick] :as f} functions]
-          [[:td {:class "num"} complexity]
-           [:code name]
-           (:name brick)
-           (location (dissoc f :name))])))))
+      (table (concat ["Function" "Brick"]
+               (metric-headers metrics/function-metrics)
+               ["Location"])
+        (for [{:keys [brick] :as f} functions]
+          (concat
+            [[:code (:name f)] (:name brick)]
+            (for [{k :key} metrics/function-metrics]
+              (metric-cell (flagged [(:name brick) (:name f) k]) (get f k)))
+            [(location (dissoc f :name))]))))))
+
+;; Dependencies
+
+(defn- dependencies-table
+  [bricks edges]
+  (let [uses (group-by :from edges)
+        used-by (group-by :to edges)
+        names (fn [xs k] (str/join ", " (sort (distinct (map k xs)))))]
+    (if (empty? edges)
+      [:p {:class "none"} "No dependencies between bricks."]
+      (table ["Brick" "Depends on" "Depended on by"]
+        (for [{:keys [brick]} bricks
+              :let [brick-name (:name brick)]]
+          [(brick-cell brick)
+           (names (uses brick-name) :to)
+           (names (used-by brick-name) :from)])))))
+
+;; Thresholds
 
 (defn- rule-text
-  [{:keys [rule value]}]
-  (case rule
-    :max (str "at most " value)
-    :min (str "at least " value)
-    :std-devs (str "at most " value " standard deviations above other bricks")
-    :max-increase (str "increase of at most " value)
-    :max-increase-percent (str "increase of at most " value "%")
-    (pr-str rule)))
+  "A rule in short notation, such as \"≤ 10\" or \"increase ≤ 50%\"."
+  [{:keys [rule value types]}]
+  (str
+    (case rule
+      :max (str "≤ " value)
+      :min (str "≥ " value)
+      :std-devs (str "≤ mean + " value "σ of other bricks")
+      :max-increase (str "increase ≤ " value)
+      :max-increase-percent (str "increase ≤ " value "%")
+      (pr-str rule))
+    (when types
+      (str " (" (str/join ", " (map #(str (name %) "s") (sort types))) ")"))))
 
-(defn- rules-table
-  [thresholds]
-  (table ["Metric" "Rule" "Level"]
-    (for [[metric rules] (sort-by key thresholds)
-          {:keys [level] :or {level :error} :as rule} rules]
-      [(label metric) (rule-text rule) (badge (name level) (name level))])))
+(defn- threshold-rows
+  [applies-to scope thresholds]
+  (for [[metric rules] (sort-by key thresholds)
+        {:keys [level] :or {level :error} :as rule} rules]
+    [applies-to
+     (label {:scope scope :metric metric})
+     (rule-text rule)
+     (level-badge level)]))
+
+(def ^:private dependency-rule-text
+  {:stable-dependencies ["Stable dependencies" "only on more stable bricks"]
+   :cycles ["Cycles" "none"]
+   :new-dependencies ["New dependencies" "none the base didn't have"]})
+
+(defn- dependency-rows
+  [rules]
+  (for [[rule level] (sort-by key rules)
+        :let [[metric text] (dependency-rule-text rule [(name rule) ""])]]
+    ["Dependencies" metric text (if level (level-badge level) "off")]))
+
+(defn- thresholds-section
+  "Every rule in one table."
+  [{:keys [thresholds change-thresholds dependency-rules]}]
+  (list
+    [:h2 "Thresholds"]
+    (table ["Applies to" "Metric" "Rule" "Level"]
+      (concat
+        (threshold-rows "Functions" :function (:function-thresholds thresholds))
+        (threshold-rows "Bricks" :brick (:brick-thresholds thresholds))
+        (dependency-rows dependency-rules)
+        (threshold-rows "Changes (with --base)" :brick change-thresholds)))))
+
+;; Page
 
 (defn- summary-tiles
-  [{:keys [bricks violations comparison]}]
+  [{:keys [bricks violations comparison hidden-warnings]}]
   (let [counts (frequencies (map :level (filter introduced? violations)))
         qualifier (if comparison "new " "")]
     [:div {:class "tiles"}
@@ -260,8 +398,11 @@ p.none { color: var(--muted); }
        (tile "" (count (:changed-bricks comparison)) "changed bricks"))
      (tile (if (pos? (counts :error 0)) "error" "ok")
        (counts :error 0) (str qualifier "errors"))
-     (tile (if (pos? (counts :warning 0)) "warning" "ok")
-       (counts :warning 0) (str qualifier "warnings"))
+     (if hidden-warnings
+       (tile "" hidden-warnings
+         (str qualifier "warnings hidden (--warnings to show)"))
+       (tile (if (pos? (counts :warning 0)) "warning" "ok")
+         (counts :warning 0) (str qualifier "warnings")))
      (when comparison
        (tile "ok" (count (:resolved comparison)) "resolved"))]))
 
@@ -273,26 +414,31 @@ p.none { color: var(--muted); }
      (list " · compared with " [:code base-ref] " (merge-base "
        [:code (subs base-rev 0 (min 12 (count base-rev)))] ")"))])
 
+(defn- comparison-sections
+  [{:keys [bricks comparison]}]
+  (when comparison
+    (list
+      (when (seq (:resolved comparison))
+        (list [:h2 "Resolved"] (resolved-table (:resolved comparison))))
+      [:h2 "Changed bricks"]
+      (changes-table bricks comparison))))
+
 (defn- sections
-  [{:keys [bricks violations thresholds comparison] :as report}]
+  [{:keys [bricks edges violations comparison] :as report}]
   (list
     (summary-tiles report)
     [:h2 "Violations"]
-    (violations-table violations comparison)
-    (when comparison
-      (list
-        (when (seq (:resolved comparison))
-          (list [:h2 "Resolved"] (resolved-table (:resolved comparison))))
-        [:h2 "Changed bricks"]
-        (changes-table bricks comparison)))
-    [:h2 "Metrics"]
+    (violations-table violations comparison (:hidden-warnings report))
+    (comparison-sections report)
+    [:h2 "Bricks"]
     (metrics-table bricks violations)
-    [:h2 "Most complex functions"]
-    (functions-table bricks 15)
-    [:h2 "Thresholds"]
-    (rules-table thresholds)
-    (when (seq (:changes report))
-      (list [:h2 "Change thresholds"] (rules-table (:changes report))))))
+    (legend metrics/columns)
+    [:h2 "Functions"]
+    (functions-table bricks violations 15)
+    (legend metrics/function-metrics)
+    [:h2 "Dependencies"]
+    (dependencies-table bricks edges)
+    (thresholds-section report)))
 
 (defn render
   [report]

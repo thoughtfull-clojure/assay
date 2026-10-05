@@ -30,3 +30,10 @@
   "The unqualified name of the symbol at the head of a list node, or nil."
   [node]
   (core/head-symbol node))
+
+(defn ns-info
+  "The ns form of a :forms node as a map of :ns (a symbol), :line, and
+  :requires, a vector of {:ns symbol :line n} for each namespace in its
+  :require and :use clauses. Returns nil if there is no ns form."
+  [forms]
+  (core/ns-info forms))

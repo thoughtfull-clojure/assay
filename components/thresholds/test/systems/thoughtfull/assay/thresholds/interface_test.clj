@@ -13,7 +13,7 @@
 (defn- check
   [rules measurements]
   (map (juxt (comp :name :brick) :level :message)
-    (thresholds/check {:m rules} measurements)))
+    (thresholds/check {:brick-thresholds {:m rules}} measurements)))
 
 (deftest max-min-test
   (is (= [["b" :error "11 is above the maximum of 10"]
@@ -28,10 +28,10 @@
     (testing "compares each brick with the others, excluding itself"
       (is (= [["outlier" :warning
                (str "20 is 18.4 standard deviations above the mean of 4"
-                 " other bricks (5 ± 0.8), over the limit of 2")]]
+                 " other bricks (5 ± 0.82), over the limit of 2")]]
             (check [{:rule :std-devs :value 2 :level :warning}] measurements))))
     (testing "reports the stats and the computed limit"
-      (let [[v] (thresholds/check {:m [{:rule :std-devs :value 2}]}
+      (let [[v] (thresholds/check {:brick-thresholds {:m [{:rule :std-devs :value 2}]}}
                   measurements)]
         (is (= 4 (get-in v [:stats :peers])))
         (is (< 6.63 (:limit v) 6.64)))))
@@ -57,19 +57,48 @@
   (is (= {:file "f.clj" :line 3 :name "g"}
         (:location
          (first
-           (thresholds/check {:m [{:rule :max :value 1}]}
+           (thresholds/check {:brick-thresholds {:m [{:rule :max :value 1}]}}
              [(assoc (measurement "a" 5)
                 :locations {:m {:file "f.clj" :line 3 :name "g"}})]))))))
 
 (deftest unknown-rule-test
   (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Unknown threshold rule"
-        (thresholds/check {:m [{:rule :median :value 1}]}
+        (thresholds/check {:brick-thresholds {:m [{:rule :median :value 1}]}}
           [(measurement "a" 1)]))))
 
-(deftest merge-thresholds-test
-  (let [merged (thresholds/merge-thresholds {:lines []
-                                             :forms [{:rule :max :value 1}]})]
-    (is (= [] (:lines merged)))
-    (is (= [{:rule :max :value 1}] (:forms merged)))
-    (is (= (:max-function-complexity thresholds/default-thresholds)
-          (:max-function-complexity merged)))))
+(deftest types-test
+  (is (= [["a" :warning "0.2 is below the minimum of 0.5"]]
+        (check [{:rule :min :value 0.5 :level :warning :types #{:component}}]
+          [(measurement "a" 0.2) (measurement "cli" :base 0)]))))
+
+(deftest function-thresholds-test
+  (let [measurements [{:brick {:name "a" :type :component}
+                       :functions [{:name "f" :file "a.clj" :line 3
+                                    :complexity 12 :depth 9 :depth-line 7}
+                                   {:name "g" :file "a.clj" :line 20
+                                    :complexity 2 :depth 2 :depth-line 21}]}]
+        violations (thresholds/check
+                     {:function-thresholds
+                      {:complexity [{:rule :max :value 10}]
+                       :depth [{:rule :max :value 8 :level :warning}]}}
+                     measurements)]
+    (is (= [[:function "f" :complexity :error {:file "a.clj" :line 3 :name "f"}
+             "12 is above the maximum of 10"]
+            [:function "f" :depth :warning {:file "a.clj" :line 7 :name "f"}
+             "9 is above the maximum of 8"]]
+          (map (juxt :scope :subject :metric :level :location :message)
+            violations))))
+  (testing "rejects statistical rules"
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"support only :max and :min"
+          (thresholds/check
+            {:function-thresholds {:complexity [{:rule :std-devs :value 2}]}}
+            [])))))
+
+(deftest merge-config-test
+  (let [merged (thresholds/merge-config
+                 {:brick-thresholds {:abstractness []}
+                  :function-thresholds {:forms [{:rule :max :value 1}]}})]
+    (is (= [] (get-in merged [:brick-thresholds :abstractness])))
+    (is (= [{:rule :max :value 1}] (get-in merged [:function-thresholds :forms])))
+    (is (= (get-in thresholds/default-config [:function-thresholds :complexity])
+          (get-in merged [:function-thresholds :complexity])))))

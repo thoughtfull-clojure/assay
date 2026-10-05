@@ -27,3 +27,26 @@
           first
           meta
           (select-keys [:row :col])))))
+
+(deftest ns-info-test
+  (is (= {:ns 'a.b
+          :line 2
+          :requires [{:ns 'c.d :line 4}
+                     {:ns 'e.f :line 5}
+                     {:ns 'g.h :line 6}
+                     {:ns 'i.j :line 7}
+                     {:ns 'i.k :line 7}
+                     {:ns 'l.m :line 8}]}
+        (parse/ns-info
+          (parse/parse-string
+            (str "; header\n"
+              "(ns a.b\n"
+              "  (:require\n"
+              "   [c.d :as d]\n"
+              "   e.f\n"
+              "   [g.h]\n"
+              "   [i j [k :as k]])\n"
+              "  (:use l.m)\n"
+              "  (:import (java.io File)))\n"
+              "(defn f [] 1)")))))
+  (is (nil? (parse/ns-info (parse/parse-string "(defn f [] 1)")))))

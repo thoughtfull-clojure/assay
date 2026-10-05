@@ -34,3 +34,14 @@
              :dir "components/zeta"
              :files ["components/zeta/src/z/core.clj"]}]
           (workspace/bricks root)))))
+
+(deftest config-test
+  (let [root (doto (java.io.File/createTempFile "assay" "")
+               (.delete)
+               (.mkdirs))]
+    (is (= {:top-namespace nil :interface-ns "interface"}
+          (workspace/config root)))
+    (spit (java.io.File. root "workspace.edn")
+      "{:top-namespace \"com.example\" :interface-ns \"ifc\"}")
+    (is (= {:top-namespace "com.example" :interface-ns "ifc"}
+          (workspace/config root)))))

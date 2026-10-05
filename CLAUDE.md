@@ -18,10 +18,14 @@ interfaces; `poly check` enforces this.
 - `workspace`: finds bricks and their source files.
 - `parse`: parses source with rewrite-clj, so metrics see code as
   written: comments, reader macros, and all.
-- `metrics`: per-function and per-brick measurements. To add a metric,
-  compute it in `measure-brick` and add it to `metrics`.
-- `thresholds`: `:max`, `:min`, and `:std-devs` rules. To add a rule type,
-  add a method to `evaluate`.
+- `metrics`: per-function and per-brick measurements, and each source
+  file's namespace and requires. To add a metric, compute it in `function`
+  or `measure-brick` and add it to `function-metrics` or `metrics`.
+- `dependencies`: the brick dependency graph from requires; afferent,
+  efferent, instability, and abstractness (interface ratio); and
+  the stable-dependencies and cycle checks.
+- `thresholds`: brick and function rules (`:max`, `:min`, and `:std-devs`
+  for bricks). To add a rule type, add a method to `evaluate`.
 - `baseline`: compares with a base report; change rules are methods of
   `evaluate-change`.
 - `git`: merge-base, changed files, and extracting a revision's tree.

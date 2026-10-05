@@ -22,17 +22,22 @@
   (core/changed-bricks measurements changed-files))
 
 (defn compare-reports
-  "Compare head with base, two reports of :bricks and :violations. Returns
-  head with:
+  "Compare head with base, two reports of :bricks, :violations, and :edges.
+  Options are :changes, change thresholds for changed bricks, and
+  :new-dependencies, the level (:error or :warning) for a dependency edge
+  that is not in base, or nil to ignore new edges. Returns head with:
 
   - each violation's :status set to :new (in a changed brick and not in
     base), :existing (also in base), or :indirect (not in base, but in a
     brick that did not change, as when a statistical threshold moves), and
     its :base-value set to the metric's value in base;
   - a :new violation added for each change threshold exceeded by a changed
-    brick;
+    brick, and for each new dependency edge;
   - :comparison, a map of :changed-bricks (a set of names), :base-metrics
     (brick name to metrics), and :resolved (violations in base but not in
-    head)."
-  [base head changed-files change-thresholds]
-  (core/compare-reports base head changed-files change-thresholds))
+    head).
+
+  Violations are matched by brick, metric, rule, and :subject (a function
+  name or dependency), so a function that moves is still the same."
+  [base head changed-files options]
+  (core/compare-reports base head changed-files options))

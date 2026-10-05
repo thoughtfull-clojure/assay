@@ -7,9 +7,9 @@
 (def ^:private report
   {:workspace "ws"
    :bricks [{:brick {:name "a" :type :component}
-             :metrics {:max-function-complexity 12 :lines 40}}
+             :metrics {:max-function-complexity 12 :forms 40}}
             {:brick {:name "b" :type :base}
-             :metrics {:max-function-complexity 2 :lines 300}}]
+             :metrics {:max-function-complexity 2 :forms 300}}]
    :violations [{:brick {:name "a" :type :component}
                  :metric :max-function-complexity
                  :level :error
@@ -17,7 +17,7 @@
                  :location {:file "components/a/src/a.clj" :line 7
                             :name "f"}}
                 {:brick {:name "b" :type :base}
-                 :metric :lines
+                 :metric :forms
                  :level :warning
                  :message "300 is 50%\nhigh"}]})
 
@@ -25,15 +25,15 @@
   (is (= [(str "::error file=components/a/src/a.clj,line=7,"
             "title=component a%3A Max function complexity::"
             "Max function complexity 12 is above the maximum of 10 (f)")
-          (str "::warning title=base b%3A Lines::"
-            "Lines 300 is 50%25%0Ahigh")]
+          (str "::warning title=base b%3A Forms::"
+            "Forms 300 is 50%25%0Ahigh")]
         (github-report/annotations report))))
 
 (deftest summary-test
   (let [summary (github-report/summary report)]
     (is (str/starts-with? summary "## Assay: ws\n\n2 bricks, 1 errors, 1 warnings."))
     (is (str/includes? summary "| ❌ error | component a | Max function complexity |"))
-    (is (str/includes? summary "**12** ❌"))
+    (is (str/includes? summary "**– / 12** ❌"))
     (is (str/includes? summary "**300** ⚠️"))))
 
 (def ^:private compared
@@ -44,7 +44,7 @@
                         :base-rev "0123456789abcdef"
                         :changed-bricks #{"a"}
                         :base-metrics {"a" {:max-function-complexity 4
-                                            :lines 40}}
+                                            :forms 40}}
                         :resolved []})))
 
 (deftest comparison-annotations-test
@@ -63,3 +63,20 @@
     (is (not (str/includes? summary "**300**"))
       "existing violations are not highlighted")
     (is (str/includes? summary "300 is 50%<br>high"))))
+
+(deftest hidden-warnings-test
+  (is (str/includes?
+        (github-report/summary (assoc report
+                                 :violations (subvec (:violations report) 0 1)
+                                 :hidden-warnings 5))
+        "2 bricks, 1 errors, 5 warnings hidden (`--warnings` to show).")))
+
+(deftest total-row-test
+  (is (str/includes? (github-report/summary report) "| **Total** |")))
+
+(deftest legend-test
+  (let [summary (github-report/summary report)]
+    (is (str/includes? summary
+          "<details><summary>What these metrics mean</summary>\n\n**Bricks**"))
+    (is (str/includes? summary "| Parameters | Positional parameters"))
+    (is (str/ends-with? summary "</details>\n"))))
