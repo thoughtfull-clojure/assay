@@ -102,6 +102,29 @@ details.legend { margin-top: 12px; }
 details.dependency-table .scroll { margin-top: 12px; }
 pre.mermaid { background: none; margin: 0; text-align: center; }
 pre.mermaid:not([data-processed]) { visibility: hidden; height: 0; }
+.graph { position: relative; }
+.graph.ready {
+  height: 70vh; min-height: 320px; resize: vertical; overflow: hidden;
+  border: 1px solid var(--border); border-radius: 8px;
+  background: var(--surface);
+}
+.graph.ready:fullscreen { height: 100vh; border-radius: 0; }
+.graph.ready pre.mermaid { height: 100%; }
+.graph.ready pre.mermaid svg { display: block; cursor: grab; touch-action: none; }
+.graph.dragging pre.mermaid svg { cursor: grabbing; }
+.graph-controls {
+  position: absolute; top: 8px; right: 8px; z-index: 1;
+  display: flex; gap: 4px;
+}
+.graph:not(.ready) .graph-controls { display: none; }
+.graph-controls button {
+  font: inherit; font-size: 15px; min-width: 32px; height: 32px;
+  padding: 0 8px; cursor: pointer; color: var(--text);
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.graph-controls button:hover { background: var(--bg); }
+.graph-controls svg { display: block; margin: auto; }
 .graph-key, .table-key { color: var(--muted); font-size: 13px; margin: 0 0 8px; }
 .table-key { margin: 8px 0 0; }
 .outlier-key {
@@ -351,7 +374,8 @@ details.legend dd code {
 
 (def ^:private mermaid-script
   "Render .mermaid blocks with Mermaid from a CDN, in the page's color
-  scheme. If it can't load, open the dependency table instead. Mermaid 11
+  scheme, then make each graph pannable and zoomable. If Mermaid can't
+  load, open the dependency table instead. Mermaid 11
   is pinned because it draws like GitHub's renderer, so the HTML and
   GitHub reports match; Mermaid 12 lays graphs out differently."
   "
@@ -360,12 +384,84 @@ import('https://cdn.jsdelivr.net/npm/mermaid@11.17.2/dist/mermaid.esm.min.mjs')
     const dark = matchMedia('(prefers-color-scheme: dark)').matches;
     mermaid.initialize({startOnLoad: false, theme: dark ? 'dark' : 'default'});
     await mermaid.run({querySelector: 'pre.mermaid'});
+    document.querySelectorAll('.graph').forEach(viewer);
   })
   .catch(() => {
     document.querySelectorAll('details.dependency-table')
       .forEach((d) => { d.open = true; });
   });
+
+// Pan and zoom a rendered graph by changing its SVG's viewBox: drag to
+// pan, Ctrl or Cmd and the wheel (or a trackpad pinch) to zoom around the
+// pointer, and buttons to zoom, fit, and go full screen.
+function viewer(graph) {
+  const svg = graph.querySelector('pre.mermaid svg');
+  if (!svg) return;
+  const box = svg.viewBox.baseVal;
+  const home = {x: box.x, y: box.y, w: box.width, h: box.height};
+  let view = {...home};
+  svg.removeAttribute('style');
+  svg.setAttribute('width', '100%');
+  svg.setAttribute('height', '100%');
+  const show = () =>
+    svg.setAttribute('viewBox', `${view.x} ${view.y} ${view.w} ${view.h}`);
+  // SVG units per screen pixel, as preserveAspectRatio's meet scales.
+  const scale = () => Math.max(view.w / svg.clientWidth,
+                               view.h / svg.clientHeight);
+  const zoom = (f, px, py) => {
+    const r = svg.getBoundingClientRect();
+    px = px ?? r.width / 2;
+    py = py ?? r.height / 2;
+    const s = scale();
+    const sx = view.x - (r.width * s - view.w) / 2 + px * s;
+    const sy = view.y - (r.height * s - view.h) / 2 + py * s;
+    view = {x: sx - (sx - view.x) * f, y: sy - (sy - view.y) * f,
+            w: view.w * f, h: view.h * f};
+    show();
+  };
+  const actions = {
+    'zoom-in': () => zoom(1 / 1.25),
+    'zoom-out': () => zoom(1.25),
+    'fit': () => { view = {...home}; show(); },
+    'fullscreen': () => document.fullscreenElement
+      ? document.exitFullscreen() : graph.requestFullscreen(),
+  };
+  graph.querySelectorAll('[data-action]').forEach((b) =>
+    b.addEventListener('click', () => actions[b.dataset.action]()));
+  svg.addEventListener('wheel', (e) => {
+    if (!(e.ctrlKey || e.metaKey)) return;
+    e.preventDefault();
+    const r = svg.getBoundingClientRect();
+    zoom(Math.exp(e.deltaY * 0.002), e.clientX - r.left, e.clientY - r.top);
+  }, {passive: false});
+  let last = null;
+  svg.addEventListener('pointerdown', (e) => {
+    last = {x: e.clientX, y: e.clientY};
+    svg.setPointerCapture(e.pointerId);
+    graph.classList.add('dragging');
+  });
+  svg.addEventListener('pointermove', (e) => {
+    if (!last) return;
+    const s = scale();
+    view.x -= (e.clientX - last.x) * s;
+    view.y -= (e.clientY - last.y) * s;
+    last = {x: e.clientX, y: e.clientY};
+    show();
+  });
+  const stop = () => { last = null; graph.classList.remove('dragging'); };
+  svg.addEventListener('pointerup', stop);
+  svg.addEventListener('pointercancel', stop);
+  graph.classList.add('ready');
+}
 ")
+
+(def ^:private fullscreen-icon
+  "Four corners pointing out, drawn in SVG rather than a font glyph that
+  some systems lack."
+  [:svg {:viewBox "0 0 16 16" :width "14" :height "14" :fill "none"
+         :stroke "currentColor" :stroke-width "1.75"
+         :stroke-linecap "round" :aria-hidden "true"}
+   [:path {:d "M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4"}]])
 
 (defn- dependencies-section
   "The brick graph, drawn by Mermaid, with the same information as a
@@ -377,9 +473,20 @@ import('https://cdn.jsdelivr.net/npm/mermaid@11.17.2/dist/mermaid.esm.min.mjs')
        "Red: a dependency on a less stable brick."
        " Dashed: new since the base."
        " Dotted amber, no arrow: bricks that change together but don't"
-       " depend on each other."]
-      [:pre {:class "mermaid"}
-       (dependencies/mermaid bricks edges (or graph-violations violations))]
+       " depend on each other. Drag to pan; hold Ctrl or ⌘ and scroll, or"
+       " pinch, to zoom."]
+      [:div {:class "graph"}
+       [:div {:class "graph-controls"}
+        (for [[action label title] [["zoom-in" "+" "Zoom in"]
+                                    ["zoom-out" "−" "Zoom out"]
+                                    ["fit" "Fit" "Fit the whole graph"]
+                                    ["fullscreen" fullscreen-icon
+                                     "Full screen"]]]
+          [:button {:type "button" :data-action action :title title
+                    :aria-label title}
+           label])]
+       [:pre {:class "mermaid"}
+        (dependencies/mermaid bricks edges (or graph-violations violations))]]
       [:details {:class "legend dependency-table"}
        [:summary "Dependencies as a table"]
        (dependencies-table bricks edges)]

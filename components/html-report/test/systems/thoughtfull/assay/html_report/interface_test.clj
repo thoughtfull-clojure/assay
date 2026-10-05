@@ -106,6 +106,15 @@
     (is (str/includes? html
           "<dt>Mean function complexity</dt><dd>The mean cyclomatic"))))
 
+(deftest graph-viewer-test
+  (let [html (html-report/render report)]
+    (is (str/includes? html "<div class=\"graph\"><div class=\"graph-controls\">")
+      "the graph sits in a viewer with controls")
+    (is (= #{"zoom-in" "zoom-out" "fit" "fullscreen"}
+          (set (map second (re-seq #"data-action=\"([a-z-]+)\"" html)))))
+    (is (str/includes? html "graph.querySelector('pre.mermaid svg')")
+      "the viewer pans and zooms the graph, not the button icons")))
+
 (deftest graph-violations-test
   (is (str/includes?
         (html-report/render

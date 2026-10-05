@@ -57,7 +57,10 @@ Assay builds the dependency graph between bricks from `ns` requires. A
 brick depends on an interface, and so on every component that implements
 it.
 
-Both reports draw the graph with Mermaid. Red edges depend on a less
+Both reports draw the graph with Mermaid. In the HTML report, drag to pan,
+hold Ctrl or ⌘ and scroll (or pinch) to zoom, use the buttons to zoom, fit
+the whole graph, or go full screen, and drag the frame's corner to make it
+taller. Red edges depend on a less
 stable brick, and with `--base`, dashed edges are new. Dotted amber lines
 without arrows join bricks that keep changing together in Git history
 although neither depends on the other: coupling the source doesn't show.

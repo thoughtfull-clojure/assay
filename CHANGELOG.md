@@ -7,6 +7,12 @@ and assay follows [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Changed
+
+- The HTML report's dependency graph sits in a taller, resizable frame
+  with pan, zoom, fit, and full screen controls, so large workspaces stay
+  readable.
+
 ## [0.2.0] - 2026-10-05
 
 ### Added
