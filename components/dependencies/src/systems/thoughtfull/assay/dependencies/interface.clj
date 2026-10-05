@@ -13,6 +13,8 @@
   - Shared keywords: keywords this brick uses that another brick also
     uses, usually map keys the bricks must agree on (connascence of
     meaning).
+  - Libraries: libraries outside the workspace the brick requires, and
+    shared libraries, those another brick also requires.
 
   Dependency rules map a check to a level (:error or :warning), or to nil to
   turn it off:
@@ -21,8 +23,10 @@
     Stable Dependencies Principle).
   - :new-dependencies flags a dependency that is not in the base, when
     comparing with one (applied by the baseline component).
+  - :mutable-state flags top-level atoms, refs, agents, volatiles, and
+    dynamic vars, and alter-var-root calls, in components.
 
-  Four rules take settings as a map with :level:
+  Five rules take settings as a map with :level:
 
   - :connascence-of-position {:max n} flags interface functions that other
     bricks call with more than n positional parameters.
@@ -37,7 +41,9 @@
     and in at least r of the less changed brick's commits. Commits that
     touch more than m bricks don't count. check reads the commits from the
     analysis's :commits, each a set of changed paths, and skips the rule
-    without them."
+    without them.
+  - :library-spread {:max-bricks n} flags each require of a library outside
+    the workspace that more than n bricks require."
   (:require
    [systems.thoughtfull.assay.dependencies.core :as core]))
 
@@ -49,8 +55,10 @@
   "Add dependency metrics to measurements (from the metrics component),
   given the workspace's settings, a map of :top-namespace and
   :interface-ns. Returns a map of :bricks (measurements with :afferent,
-  :efferent, :instability, :abstractness, :cohesion, and :shared-keywords
-  added to :metrics), :edges (a vector of {:from brick-name :to brick-name
+  :efferent, :instability, :abstractness, :cohesion, :shared-keywords,
+  :libraries, and :shared-libraries added to :metrics), :libraries (each
+  library outside the workspace as {:library :bricks :requires}, most
+  spread first), :edges (a vector of {:from brick-name :to brick-name
   :interface name :location {:file :line}}), and what check needs:
   :workspace and :used."
   [workspace measurements]

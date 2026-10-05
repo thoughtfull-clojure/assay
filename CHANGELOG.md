@@ -9,6 +9,11 @@ and assay follows [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+- An I/O and mutability section of the reports, with two new rules.
+  `:library-spread` warns at each require of a library that more than one
+  brick requires, such as a database driver used outside its gateway
+  component. `:mutable-state` warns about top-level atoms, refs, agents,
+  volatiles, dynamic vars, and `alter-var-root` calls in components.
 - The `:co-change` dependency rule warns about two bricks that keep
   changing together in Git history although neither depends on the
   other, and the graph joins them with a dotted line.
@@ -22,7 +27,7 @@ and assay follows [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.htm
 
 ### Changed
 
-- The reports group brick metrics into three sections, each with its own
+- The reports group brick metrics into sections, each with its own
   table: dependencies, complexity, and modularity. With `--base`, a changed
   brick's values in those tables show how much they changed, in place of
   the Changed bricks table.

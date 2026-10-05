@@ -57,6 +57,7 @@ body {
 main { max-width: 1200px; margin: 0 auto; padding: 32px 16px 64px; }
 h1 { font-size: 26px; margin: 0 0 4px; }
 h2 { font-size: 18px; margin: 40px 0 12px; }
+h3 { font-size: 15px; margin: 24px 0 8px; }
 .meta { color: var(--muted); margin: 0; }
 .tiles { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 24px; }
 .tile {
@@ -384,6 +385,18 @@ import('https://cdn.jsdelivr.net/npm/mermaid@11.17.2/dist/mermaid.esm.min.mjs')
        (dependencies-table bricks edges)]
       [:script {:type "module"} (->Raw mermaid-script)])))
 
+(defn- shared-libraries-table
+  "Libraries that more than one brick requires, most spread first."
+  [{:keys [libraries]}]
+  (when-let [shared (seq (filter #(< 1 (count (:bricks %))) libraries))]
+    (list
+      [:h3 "Shared libraries"]
+      (table ["Library" [{:class "num"} "Bricks"] "Required by"]
+        (for [{:keys [library bricks]} shared]
+          [[:code library]
+           [:td {:class "num"} (count bricks)]
+           (str/join ", " bricks)])))))
+
 ;; Thresholds
 
 (defn- rule-text
@@ -411,10 +424,12 @@ import('https://cdn.jsdelivr.net/npm/mermaid@11.17.2/dist/mermaid.esm.min.mjs')
 
 (defn- dependency-rule-text
   "A dependency rule's [metric rule] text. Some rules have settings."
-  [rule {:keys [max min-forms max-size since min-shared min-strength]}]
+  [rule {:keys [max min-forms max-size since min-shared min-strength]
+         :as setting}]
   (case rule
     :stable-dependencies ["Stable dependencies" "only on more stable bricks"]
     :new-dependencies ["New dependencies" "none the base didn't have"]
+    :mutable-state ["Mutable state" "none in components"]
     :connascence-of-position
     ["Connascence of position"
      (str "≤ " max " positional parameters in interface functions others call")]
@@ -425,6 +440,10 @@ import('https://cdn.jsdelivr.net/npm/mermaid@11.17.2/dist/mermaid.esm.min.mjs')
      (str "no bricks without a dependency that changed together in ≥ "
        min-shared " commits and ≥ " (Math/round (* 100 (double min-strength)))
        "% of one's commits, over " since)]
+    :library-spread
+    ["Library spread"
+     (str "each library required by ≤ " (:max-bricks setting)
+       (if (= 1 (:max-bricks setting)) " brick" " bricks"))]
     :merge-candidates
     ["Merge candidates"
      (str "no component with one component dependent, ≤ "
@@ -497,6 +516,8 @@ import('https://cdn.jsdelivr.net/npm/mermaid@11.17.2/dist/mermaid.esm.min.mjs')
         (when (= :dependencies key)
           (dependencies-section report))
         (section-table columns bricks violations comparison)
+        (when (= :io key)
+          (shared-libraries-table report))
         (legend columns)))
     (thresholds-section report)))
 

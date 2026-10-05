@@ -135,7 +135,8 @@
                       :forms 22
                       :functions 2
                       :mean-function-complexity 2.0
-                      :mean-function-depth 2.0}
+                      :mean-function-depth 2.0
+                      :mutable-state 0}
             :sources [{:file file :ns (quote c) :requires [] :forms 22
                        :definitions [{:name (quote simple) :line 2
                                       :references #{(quote x)}}
@@ -144,7 +145,25 @@
                                                          ["x" "if" "when"]))}]}]}
           (-> (metrics/measure-brick root {:name "c" :files [file]})
             (dissoc :functions)
-            (update :sources (partial mapv #(dissoc % :keywords :fragments))))))))
+            (update :sources (partial mapv #(dissoc % :keywords :fragments
+                                              :mutable-state))))))))
+
+(deftest mutable-state-test
+  (is (= [{:name 'cache :line 2 :kind :atom}
+          {:name 'counter :line 3 :kind :ref}
+          {:name '*conn* :line 4 :kind :dynamic}
+          {:name 'once :line 5 :kind :volatile}
+          {:name "#'f" :line 6 :kind :alter-var-root}]
+        (:mutable-state
+         (measure (str "(ns n)\n"
+                    "(def cache (atom {}))\n"
+                    "(def ^:private counter \"doc\" (ref 0))\n"
+                    "(def ^:dynamic *conn* nil)\n"
+                    "(defonce once (volatile! 1))\n"
+                    "(defn g [] (alter-var-root #'f inc))\n"
+                    "(def plain {:a 1})\n"
+                    "(defn h [] (let [a (atom 0)] @a))\n"))))
+    "local atoms and plain values aren't mutable state"))
 
 (deftest columns-test
   (is (= ["Files" "Forms" "Functions" "Mean function complexity"
@@ -167,7 +186,10 @@
           :instability 0.5
           :abstractness nil
           :cohesion nil
-          :shared-keywords nil}
+          :shared-keywords nil
+          :libraries nil
+          :shared-libraries nil
+          :mutable-state nil}
         (metrics/averages
           [{:brick {:type :component}
             :metrics {:files 1 :forms 10 :functions 1

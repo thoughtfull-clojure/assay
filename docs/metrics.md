@@ -281,6 +281,40 @@ shape could ripple. To make those agreements explicit:
 - Expose constructor and accessor functions for data that other bricks
   shouldn't build or take apart themselves.
 
+## I/O and mutability metrics
+
+How much I/O a brick does isn't a problem in itself: a database component
+is all I/O, by design. These metrics look instead at where the I/O lives,
+and at state that code hides from the functions that use it.
+
+### Library spread
+
+For each library outside the workspace, assay counts the bricks that
+require it, and by default warns at each require of a library that more
+than one brick requires. When one brick wraps a library, you can upgrade
+it, replace it, or fake it in tests in one place. A database driver that
+four bricks require means four bricks know the schema, and a missing
+gateway component.
+
+To fix it, give the library one owner: a component whose interface offers
+what the other bricks need, in their terms rather than the library's. Some
+libraries are fine anywhere: a logging library, say, or a small utility.
+Raise `:max-bricks`, or accept the warnings, for those.
+
+### Mutable state
+
+A top-level atom, ref, agent, or volatile is state that every function in
+the brick can reach without taking it as an argument. Tests that touch it
+interfere with each other, and when it sits in the interface, every brick
+that uses the component shares it. Dynamic vars and `alter-var-root` have
+the same problem: behavior that depends on something the call doesn't
+show.
+
+Pass the state in instead: create it in a base, or in a system started by
+a library such as Integrant or Component, and give it to the functions
+that need it. A cache can live in a value the caller holds. Bases don't
+count, since they're the imperative shell where state belongs.
+
 ## Connascence
 
 Connascence between bricks is coupling: code in one brick that must change

@@ -108,6 +108,22 @@ bricks it's coupling. Assay checks the kinds it can read from source:
 Assay can't see the runtime kinds, such as execution order and timing,
 from source.
 
+### I/O and mutability metrics
+
+| Metric | Meaning |
+| --- | --- |
+| Libraries | Libraries outside the workspace that the brick requires |
+| Shared libraries | Of those, libraries that another brick also requires |
+| Mutable state | Top-level atoms, refs, agents, volatiles, dynamic vars, and `alter-var-root` calls |
+
+Assay names a library by its namespaces: `next.jdbc` and `next.jdbc.sql`
+are `next.jdbc`, and `rewrite-clj.node` and `rewrite-clj.parser` are
+`rewrite-clj`. Clojure's own pure namespaces, such as `clojure.string` and
+`clojure.set`, don't count; its I/O namespaces, `clojure.java.io` and
+`clojure.java.shell`, do. A library that one brick wraps can change in one
+place, while one that several bricks require, such as a database driver,
+points to a missing gateway component.
+
 ## Usage
 
 Run assay from the workspace root:
@@ -130,10 +146,12 @@ Reports list only error-level violations unless you pass `--warnings`,
 and count the warnings they leave out. Warnings point to code worth
 refactoring before it reaches an error, but they never fail a run.
 
-After the violations, the HTML and GitHub reports have three sections:
+After the violations, the HTML and GitHub reports have four sections:
 dependencies (the graph, afferent and efferent coupling, and instability),
-complexity (size and function complexity), and modularity (abstractness,
-cohesion, and shared keywords). Each has a table of every brick, with a
+complexity (size and function complexity), modularity (abstractness,
+cohesion, and shared keywords), and I/O and mutability (libraries, with a
+table of those more than one brick requires, and mutable state). Each has
+a table of every brick, with a
 row of averages across all bricks. With `--base`, a changed brick's values
 show how much they changed, such as `12 (+3)`. The tables mark each value
 2 or more standard deviations from the mean of all bricks: the HTML report
@@ -179,6 +197,8 @@ Assay reads `assay.edn` at the workspace root, or the file you pass to
                     :connascence-of-position {:max 3 :level :warning}
                     :duplicate-code {:min-forms 30 :level :warning}
                     :merge-candidates {:max-size 0.25 :level :warning}
+                    :library-spread {:max-bricks 1 :level :warning}
+                    :mutable-state :warning
                     :co-change {:since "12 months" :min-shared 5
                                 :min-strength 0.5 :max-bricks-per-commit 5
                                 :level :warning}}
@@ -209,6 +229,9 @@ Dependency rules set a level, or `nil` to turn a check off:
   breaks the Stable Dependencies Principle.
 - `:new-dependencies`: with `--base`, a dependency between bricks that the
   base didn't have.
+- `:mutable-state`: a top-level atom, ref, agent, volatile, or dynamic var,
+  or an `alter-var-root` call, in a component. Bases are the imperative
+  shell, so they don't count.
 - `:connascence-of-position`, with `:max`: an interface function that other
   bricks call has more than `:max` positional parameters.
 - `:duplicate-code`, with `:min-forms`: code of at least `:min-forms` forms
@@ -226,8 +249,10 @@ Dependency rules set a level, or `nil` to turn a check off:
   `--base`, these violations are always existing, since they come from
   history rather than from the change. Without Git history, assay skips
   the check.
+- `:library-spread`, with `:max-bricks`: a library that more than
+  `:max-bricks` bricks require, reported at each brick's require.
 
-These four take a map with a `:level`. A configured map merges over the
+These five take a map with a `:level`. A configured map merges over the
 default, so `{:duplicate-code {:min-forms 50}}` keeps the default level.
 
 `:change-thresholds` apply only with `--base`, to the bricks that changed:

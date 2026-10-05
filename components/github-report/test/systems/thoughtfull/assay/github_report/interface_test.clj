@@ -83,6 +83,12 @@
     (is (= 1 (count (re-seq #"\*\*\d+\*\*" summary))))
     (is (str/includes? summary "Bold: 2 or more standard deviations"))))
 
+(deftest shared-libraries-test
+  (is (str/includes?
+        (github-report/summary
+          (assoc report :libraries [{:library "next.jdbc" :bricks ["a" "b"]}]))
+        "**Shared libraries**\n\n| Library | Bricks | Required by |")))
+
 (deftest average-row-test
   (is (str/includes? (github-report/summary report) "| **Average** |")))
 
@@ -101,9 +107,11 @@
                        :message "12 is above the maximum of 10"})
                     (assoc :edges [{:from "a" :to "b"}])))
         sections (map second (re-seq #"(?m)^### (.*)$" summary))]
-    (is (= ["Violations" "Dependencies" "Complexity" "Modularity"] sections))
+    (is (= ["Violations" "Dependencies" "Complexity" "Modularity"
+            "I/O and mutability"]
+          sections))
     (is (str/includes? summary "```mermaid\ngraph TD\n  b0[\"a\"]"))
-    (is (= 3 (count (re-seq #"<details><summary>What these metrics mean" summary)))
+    (is (= 4 (count (re-seq #"<details><summary>What these metrics mean" summary)))
       "a legend in each section")))
 
 (deftest brick-annotation-test
@@ -119,7 +127,8 @@
     "a violation of a whole brick is anchored to the brick's deps.edn"))
 
 (deftest comparison-section-order-test
-  (is (= ["Violations" "Resolved" "Dependencies" "Complexity" "Modularity"]
+  (is (= ["Violations" "Resolved" "Dependencies" "Complexity" "Modularity"
+          "I/O and mutability"]
         (map second (re-seq #"(?m)^### (.*)$"
                       (github-report/summary
                         (-> compared

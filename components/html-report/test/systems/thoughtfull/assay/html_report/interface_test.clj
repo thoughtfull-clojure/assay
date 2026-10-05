@@ -114,6 +114,17 @@
         "b0 -.- b1")
     "the graph draws violations the table leaves out"))
 
+(deftest shared-libraries-test
+  (let [html (html-report/render
+               (assoc report :libraries
+                 [{:library "next.jdbc" :bricks ["a" "b"]}
+                  {:library "clojure.tools.cli" :bricks ["x"]}]))]
+    (is (str/includes? html
+          (str "<td><code>next.jdbc</code></td><td class=\"num\">2</td>"
+            "<td>a, b</td>")))
+    (is (not (str/includes? html "clojure.tools.cli"))
+      "libraries only one brick requires aren't listed")))
+
 (deftest new-brick-test
   (is (str/includes?
         (html-report/render
@@ -128,13 +139,14 @@
         "<dd><code>Ce / (Ca + Ce)</code>, from <code>0</code>")))
 
 (deftest section-order-test
-  (is (= ["Violations" "Dependencies" "Complexity" "Modularity" "Thresholds"]
+  (is (= ["Violations" "Dependencies" "Complexity" "Modularity"
+          "I/O and mutability" "Thresholds"]
         (map second (re-seq #"<h2[^>]*>([^<]+)</h2>"
                       (html-report/render report))))))
 
 (deftest comparison-section-order-test
   (is (= ["Violations" "Resolved" "Dependencies" "Complexity" "Modularity"
-          "Thresholds"]
+          "I/O and mutability" "Thresholds"]
         (map second
           (re-seq #"<h2[^>]*>([^<]+)</h2>"
             (html-report/render

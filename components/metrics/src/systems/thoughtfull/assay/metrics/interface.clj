@@ -6,12 +6,16 @@
 (defn measure-source
   "Measure a string of Clojure source from file (a path used for locations).
   Returns a map of :file, :ns and :requires (from its ns form, if any),
-  :forms, :top-level-forms,
-  :functions (each also has :ns), and :definitions. Each definition (def, defn, defmulti, and
-  so on) is a map of :name (a symbol), :line, and :references, the set of
-  symbols in its body. Each function is a map of :name, :file, :line, :complexity,
-  :depth (with :depth-line, the line of its deepest form), :forms, and
-  :params."
+  :forms, :top-level-forms, :functions (each also has :ns), :definitions,
+  :keywords, :fragments, and :mutable-state.
+
+  Each definition (def, defn, defmulti, and so on) is a map of :name (a
+  symbol), :line, and :references, the set of symbols in its body. Each
+  function is a map of :name, :file, :line, :complexity, :depth (with
+  :depth-line, the line of its deepest form), :forms, and :params. Each
+  :mutable-state entry is a top-level atom, ref, agent, volatile, or
+  dynamic var, or an alter-var-root call, as a map of :name, :line, and
+  :kind."
   [file source]
   (core/measure-source file source))
 
@@ -19,8 +23,8 @@
   "Measure every source file of brick (as returned by the workspace
   component), reading files relative to root. Returns a map of :brick,
   :metrics (metric key to number, or nil when undefined), :functions, and
-  :sources (each source file's :file, :ns, :requires, :forms, and
-  :definitions)."
+  :sources (each source file's :file, :ns, :requires, :forms,
+  :definitions, :keywords, :fragments, and :mutable-state)."
   [root brick]
   (core/measure-brick root brick))
 
@@ -32,8 +36,8 @@
 
 (def sections
   "Report sections in order, each a map of :key, :label, and :columns, the
-  columns (as in columns) it shows: dependencies, complexity, and
-  modularity."
+  columns (as in columns) it shows: dependencies, complexity, modularity,
+  and I/O and mutability."
   core/sections)
 
 (defn format-value

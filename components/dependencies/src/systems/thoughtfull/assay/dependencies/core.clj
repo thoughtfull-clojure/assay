@@ -4,6 +4,7 @@
    [systems.thoughtfull.assay.dependencies.co-change :as co-change]
    [systems.thoughtfull.assay.dependencies.cohesion :as cohesion]
    [systems.thoughtfull.assay.dependencies.connascence :as connascence]
+   [systems.thoughtfull.assay.dependencies.libraries :as libraries]
    [systems.thoughtfull.assay.dependencies.names :as names]))
 
 (def default-rules
@@ -13,7 +14,9 @@
    :duplicate-code {:min-forms 30 :level :warning}
    :merge-candidates {:max-size 0.25 :level :warning}
    :co-change {:since "12 months" :min-shared 5 :min-strength 0.5
-               :max-bricks-per-commit 5 :level :warning}})
+               :max-bricks-per-commit 5 :level :warning}
+   :library-spread {:max-bricks 1 :level :warning}
+   :mutable-state :warning})
 
 (defn merge-rules
   "Merge configured rules over the defaults. A map-valued rule merges key
@@ -87,10 +90,12 @@
         interfaces-of (group-by :from edges)
         dependents-of (group-by :to edges)
         cohesion-analysis (cohesion/analyze workspace measurements)
-        shared-keywords (connascence/shared-keywords measurements)]
+        shared-keywords (connascence/shared-keywords measurements)
+        library-analysis (libraries/analyze top-namespace measurements)]
     {:edges edges
      :workspace workspace
      :used (:used cohesion-analysis)
+     :libraries (:libraries library-analysis)
      :bricks (vec
                (for [{:keys [brick] :as m} measurements
                      :let [brick-name (:name brick)]]
@@ -99,6 +104,7 @@
                      (set (map :interface (interfaces-of brick-name)))
                      (set (map :from (dependents-of brick-name))))
                    (get-in cohesion-analysis [:metrics brick-name])
+                   (get-in library-analysis [:metrics brick-name])
                    {:shared-keywords (shared-keywords brick-name)})))}))
 
 ;; Checks
@@ -159,6 +165,40 @@
                   (Math/round (* 100 size)) "% as many forms; consider"
                   " merging it into " dependent)})))
 
+(def ^:private mutable-state-text
+  {:atom "defines an atom"
+   :ref "defines a ref"
+   :agent "defines an agent"
+   :volatile "defines a volatile"
+   :dynamic "defines a dynamic var"
+   :alter-var-root "calls alter-var-root on"})
+
+(defn- mutable-state-violations
+  "Mutable state in components, which bases, as the shell, may hold. State
+  in an interface namespace is shared with every brick that uses it."
+  [level {:keys [workspace bricks]}]
+  (let [segments (names/segments (:top-namespace workspace) bricks)]
+    (for [{:keys [brick sources]} bricks
+          :when (= :component (:type brick))
+          {:keys [ns file mutable-state]} sources
+          {:keys [name line kind]} mutable-state
+          :let [interface? (names/interface-ns? workspace
+                             (segments (:name brick)) ns)]]
+      {:scope :dependency
+       :brick brick
+       :metric :mutable-state
+       :label "Mutable state"
+       :subject (str name)
+       :level level
+       :rule {:rule :mutable-state}
+       :location {:file file :line line :name (str name)}
+       :message (str (mutable-state-text kind)
+                  (when (= :alter-var-root kind) (str " " name))
+                  (if interface?
+                    (str " in its interface, so every brick that uses it"
+                      " shares the state")
+                    ", state hidden from the functions that use it"))})))
+
 (defn- level
   "A rule's level: the rule itself, or its :level when it has settings."
   [rule]
@@ -168,7 +208,8 @@
   [rules {:keys [workspace bricks used] :as analysis}]
   (let [{:keys [stable-dependencies
                 connascence-of-position duplicate-code
-                merge-candidates co-change]} rules]
+                merge-candidates co-change library-spread
+                mutable-state]} rules]
     (vec (concat
            (when stable-dependencies
              (stable-dependency-violations stable-dependencies analysis))
@@ -180,7 +221,11 @@
            (when (level merge-candidates)
              (merge-candidate-violations merge-candidates analysis))
            (when (level co-change)
-             (co-change/violations co-change analysis))))))
+             (co-change/violations co-change analysis))
+           (when (level library-spread)
+             (libraries/violations library-spread analysis))
+           (when mutable-state
+             (mutable-state-violations mutable-state analysis))))))
 
 (defn neighbors
   [bricks edges]

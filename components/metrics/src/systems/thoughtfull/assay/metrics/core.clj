@@ -60,7 +60,20 @@
    {:key :shared-keywords
     :section :modularity
     :label "Shared keywords"
-    :description "Keywords this brick uses that other bricks also use."}])
+    :description "Keywords this brick uses that other bricks also use."}
+   {:key :libraries
+    :section :io
+    :label "Libraries"
+    :description "Libraries outside the workspace that the brick requires."}
+   {:key :shared-libraries
+    :section :io
+    :label "Shared libraries"
+    :description "Of those, libraries that another brick also requires."}
+   {:key :mutable-state
+    :section :io
+    :label "Mutable state"
+    :description (str "Top-level atoms, refs, agents, volatiles, dynamic"
+                   " vars, and alter-var-root calls.")}])
 
 ;; Explanations are legend entries. Code and formulas are in backticks,
 ;; which reports render as code.
@@ -104,7 +117,21 @@
    (str "Keywords this brick uses that another brick also uses: usually"
      " map keys that both must agree on (connascence of meaning). Renaming"
      " one means changing every brick that shares it. Keywords that are"
-     " Clojure syntax, such as `:as` and `:keys`, don't count.")})
+     " Clojure syntax, such as `:as` and `:keys`, don't count.")
+   :libraries
+   (str "Libraries outside the workspace that the brick requires, named by"
+     " their namespaces, such as `next.jdbc` or `clojure.java.io`. Clojure's"
+     " own pure namespaces, such as `clojure.string`, don't count.")
+   :shared-libraries
+   (str "The brick's libraries that another brick also requires. A library"
+     " wrapped by one brick can be replaced or upgraded in one place; a"
+     " library spread across bricks, such as a database driver, means a"
+     " missing gateway component.")
+   :mutable-state
+   (str "Top-level `atom`, `ref`, `agent`, and `volatile!` definitions,"
+     " `^:dynamic` vars, and `alter-var-root` calls: state hidden from the"
+     " functions that depend on it, which makes tests interfere with each"
+     " other.")})
 
 (def ^:private metric-index
   (into {} (map (juxt :key identity)) metrics))
@@ -121,7 +148,8 @@
 (def sections
   (vec (for [[key label] [[:dependencies "Dependencies"]
                           [:complexity "Complexity"]
-                          [:modularity "Modularity"]]]
+                          [:modularity "Modularity"]
+                          [:io "I/O and mutability"]]]
          {:key key
           :label label
           :columns (filterv #(= key (:section %)) columns)})))
@@ -480,6 +508,47 @@
                        (filter symbol?))
                      body)})))
 
+;; Mutable state
+
+(def ^:private stateful-constructors
+  {"atom" :atom "ref" :ref "agent" :agent "volatile!" :volatile})
+
+(defn- dynamic?
+  "True if a definition's name node carries ^:dynamic or {:dynamic true}."
+  [name-node]
+  (some #(= :dynamic (token-value %))
+    (tree-seq n/inner? parse/code-children name-node)))
+
+(defn- definition-symbol
+  [name-node]
+  (loop [node name-node]
+    (if (= :meta (some-> node n/tag))
+      (recur (unwrap-meta node))
+      (token-value node))))
+
+(defn- mutable-state
+  "Top-level definitions of mutable state, and alter-var-root calls
+  anywhere, each a map of :name, :line, and :kind (:atom, :ref, :agent,
+  :volatile, :dynamic, or :alter-var-root)."
+  [top-level]
+  (concat
+    (for [node top-level
+          :when (#{"def" "defonce"} (parse/head-symbol node))
+          :let [[_ name-node & more] (parse/code-children node)
+                sym (definition-symbol name-node)
+                kind (if (dynamic? name-node)
+                       :dynamic
+                       (stateful-constructors
+                         (some-> (last more) parse/head-symbol)))]
+          :when (and (symbol? sym) kind)]
+      {:name sym :line (:row (meta node)) :kind kind})
+    (for [form top-level
+          node (tree-seq n/inner? parse/code-children form)
+          :when (= "alter-var-root" (parse/head-symbol node))]
+      {:name (some-> (second (parse/code-children node)) n/string)
+       :line (:row (meta node))
+       :kind :alter-var-root})))
+
 (defn measure-source
   [file source]
   (let [forms (parse/parse-string source)
@@ -500,7 +569,8 @@
                       (keep definition)
                       vec)
        :keywords (keywords top-level)
-       :fragments (fragments top-level)})))
+       :fragments (fragments top-level)
+       :mutable-state (vec (mutable-state top-level))})))
 
 (defn- mean
   [xs]
@@ -517,10 +587,11 @@
                :forms (reduce + (map :forms files))
                :functions (count functions)
                :mean-function-complexity (mean (map :complexity functions))
-               :mean-function-depth (mean (map :depth functions))}
+               :mean-function-depth (mean (map :depth functions))
+               :mutable-state (count (mapcat :mutable-state files))}
      :functions functions
      :sources (mapv #(select-keys % [:file :ns :requires :forms :definitions
-                                     :keywords :fragments])
+                                     :keywords :fragments :mutable-state])
                 files)}))
 
 (def ^:private labels

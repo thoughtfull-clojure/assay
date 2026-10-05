@@ -75,7 +75,7 @@
             (dependencies/analyze workspace
               [(brick "lonely" :component (source 't.lonely.interface 10))]))]
     (is (= {:afferent 0 :efferent 0 :instability nil :abstractness 0.0
-            :cohesion nil :shared-keywords 0}
+            :cohesion nil :shared-keywords 0 :libraries 0 :shared-libraries 0}
           (m "lonely")))))
 
 (deftest check-test
@@ -95,6 +95,74 @@
       (is (empty? (dependencies/check {:stable-dependencies nil} analysis)))
       (is (every? #(= :warning (:level %))
             (dependencies/check {:stable-dependencies :warning} analysis))))))
+
+(def ^:private libraried
+  ;; a and b both use the database driver; a also uses clojure.string,
+  ;; which doesn't count, and its own workspace interface. x is a base.
+  [{:brick {:name "a" :type :component}
+    :metrics {}
+    :sources [{:file "a/core.clj" :ns 't.a.core
+               :requires [{:ns 'next.jdbc :line 3} {:ns 'next.jdbc.sql :line 4}
+                          {:ns 'clojure.string :line 5}
+                          {:ns 't.b.interface :line 6}]}]}
+   {:brick {:name "b" :type :component}
+    :metrics {}
+    :sources [{:file "b/core.clj" :ns 't.b.core
+               :requires [{:ns 'next.jdbc.sql :line 3}
+                          {:ns 'clojure.java.io :line 4}]}]}
+   {:brick {:name "x" :type :base}
+    :metrics {}
+    :sources [{:file "x/main.clj" :ns 't.x.main
+               :requires [{:ns 'clojure.tools.cli :line 3}
+                          {:ns 'clojure.java.shell :line 4}]}]}])
+
+(deftest library-spread-test
+  (let [analysis (dependencies/analyze workspace libraried)
+        m (metrics-by-name analysis)]
+    (testing "libraries named by their namespaces"
+      (is (= [{:library "next.jdbc" :bricks ["a" "b"]}
+              {:library "clojure.java.io" :bricks ["b"]}
+              {:library "clojure.java.shell" :bricks ["x"]}
+              {:library "clojure.tools.cli" :bricks ["x"]}]
+            (map #(select-keys % [:library :bricks]) (:libraries analysis)))))
+    (testing "metrics"
+      (is (= {"a" [1 1] "b" [2 1] "x" [2 0]}
+            (update-vals m (juxt :libraries :shared-libraries)))))
+    (testing "a violation at each brick's first require"
+      (is (= [["a" "next.jdbc" {:file "a/core.clj" :line 3}
+               "requires next.jdbc, which b also requires"]
+              ["b" "next.jdbc" {:file "b/core.clj" :line 3}
+               "requires next.jdbc, which a also requires"]]
+            (->> (dependencies/check {} analysis)
+              (filter #(= :library-spread (:metric %)))
+              (map (juxt (comp :name :brick) :subject :location :message)))))
+      (is (empty? (filter #(= :library-spread (:metric %))
+                    (dependencies/check {:library-spread {:max-bricks 2}}
+                      analysis)))))))
+
+(deftest mutable-state-test
+  (let [state [{:name 'cache :line 2 :kind :atom}]
+        violations (->> (dependencies/check {}
+                          (dependencies/analyze workspace
+                            [{:brick {:name "a" :type :component}
+                              :metrics {}
+                              :sources [{:file "a/core.clj" :ns 't.a.core
+                                         :mutable-state state}
+                                        {:file "a/interface.clj"
+                                         :ns 't.a.interface
+                                         :mutable-state state}]}
+                             {:brick {:name "x" :type :base}
+                              :metrics {}
+                              :sources [{:file "x/main.clj" :ns 't.x.main
+                                         :mutable-state state}]}]))
+                     (filter #(= :mutable-state (:metric %))))]
+    (is (= [["a" {:file "a/core.clj" :line 2 :name "cache"}
+             "defines an atom, state hidden from the functions that use it"]
+            ["a" {:file "a/interface.clj" :line 2 :name "cache"}
+             (str "defines an atom in its interface, so every brick that"
+               " uses it shares the state")]]
+          (map (juxt (comp :name :brick) :location :message) violations))
+      "components only: a base is the shell")))
 
 (deftest merge-candidates-test
   ;; s is used only by a, a component 10 times its size. a is used only by

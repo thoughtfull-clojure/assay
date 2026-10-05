@@ -221,6 +221,16 @@
         (or graph-violations violations))
       "\n```")))
 
+(defn- shared-libraries-table
+  "Libraries that more than one brick requires, most spread first."
+  [{:keys [libraries]}]
+  (when-let [shared (seq (filter #(< 1 (count (:bricks %))) libraries))]
+    (str "**Shared libraries**\n\n"
+      (table ["Library" "Bricks" "Required by"]
+        (for [{:keys [library bricks]} shared]
+          [(str "`" library "`") (str (count bricks))
+           (str/join ", " bricks)])))))
+
 (defn- metric-sections
   "A section for each group of metrics. Dependencies start with the brick
   graph."
@@ -229,7 +239,9 @@
     (str "### " label "\n\n"
       (when (= :dependencies key)
         (some-> (dependencies-graph report) (str "\n\n")))
-      (section-table columns report))))
+      (section-table columns report)
+      (when (= :io key)
+        (some->> (shared-libraries-table report) (str "\n\n"))))))
 
 (defn summary
   [report]

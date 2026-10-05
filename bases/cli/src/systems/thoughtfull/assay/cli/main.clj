@@ -89,6 +89,7 @@
         bricks (:bricks analysis)]
     {:bricks bricks
      :edges (:edges analysis)
+     :libraries (:libraries analysis)
      :violations (into (thresholds/check rules bricks)
                    (dependencies/check (:dependency-rules config) analysis))
      :thresholds rules}))

@@ -190,9 +190,9 @@ Each run then has:
 
 - Annotations on the code for each violation. Assay anchors violations of
   a whole brick to the brick's `deps.edn`.
-- A job summary with the violations, then the brick metrics in three
-  sections: dependencies, with the brick graph; complexity; and
-  modularity.
+- A job summary with the violations, then the brick metrics in four
+  sections: dependencies, with the brick graph; complexity; modularity;
+  and I/O and mutability.
 - The HTML report, as the `assay-report` artifact.
 
 Assay reports only error-level violations unless you pass `--warnings`.
