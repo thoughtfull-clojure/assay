@@ -63,10 +63,13 @@ dependencies as a table.
 | Afferent (Ca) | Bricks that depend on this brick |
 | Efferent (Ce) | Interfaces this brick depends on |
 | Instability | `Ce / (Ca + Ce)`: `0` is stable, `1` is unstable |
-| Abstractness | `1 - interface forms / all forms`; bases are `0` |
+| Abstractness | `1 - interface definitions / all definitions`; bases are `0` |
 
 Abstractness measures how much a component's interface hides: a small
-interface over a large implementation is abstract.
+interface over a large implementation is abstract. It counts definitions
+(`def`, `defn`, `defmethod`, and the like) rather than forms, since an
+interface function is short even when it exposes a lot. At `0.5`, each
+interface definition hides only one implementation definition.
 
 ### Cohesion
 
@@ -165,7 +168,8 @@ Assay reads `assay.edn` at the workspace root, or the file you pass to
                     :new-dependencies :warning
                     :unused-interface :warning
                     :connascence-of-position {:max 3 :level :warning}
-                    :duplicate-code {:min-forms 30 :level :warning}}
+                    :duplicate-code {:min-forms 30 :level :warning}
+                    :merge-candidates {:max-size 0.25 :level :warning}}
  :change-thresholds {:forms [{:rule :max-increase-percent :value 50}]}}
 ```
 
@@ -200,8 +204,12 @@ Dependency rules set a level, or `nil` to turn a check off:
   bricks call has more than `:max` positional parameters.
 - `:duplicate-code`, with `:min-forms`: code of at least `:min-forms` forms
   appears in more than one brick.
+- `:merge-candidates`, with `:max-size`: a component whose only dependent
+  is another component, and whose forms are at most `:max-size` times that
+  component's. A component that only a base uses doesn't count, since
+  Polylith keeps logic out of bases.
 
-These two take a map with a `:level`. A configured map merges over the
+These three take a map with a `:level`. A configured map merges over the
 default, so `{:duplicate-code {:min-forms 50}}` keeps the default level.
 
 `:change-thresholds` apply only with `--base`, to the bricks that changed:

@@ -7,8 +7,17 @@ and assay follows [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Added
+
+- The `:merge-candidates` dependency rule warns about a small component
+  whose only dependent is another component, since it may belong inside
+  that component.
+
 ### Changed
 
+- Abstractness counts definitions rather than forms:
+  `1 - interface definitions / all definitions`. Forms made every
+  component look abstract, since interface functions are short.
 - The default config file is `assay.edn` at the workspace root, not
   `.config/assay.edn`. Pass `--config` to use another location.
 

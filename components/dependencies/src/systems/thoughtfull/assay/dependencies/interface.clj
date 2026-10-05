@@ -6,8 +6,8 @@
   - Afferent (Ca): bricks that depend on this brick's interface.
   - Efferent (Ce): interfaces this brick depends on.
   - Instability: Ce / (Ca + Ce), undefined for a brick with neither.
-  - Abstractness: 1 - interface forms / all forms. A small interface over
-    a large implementation is abstract; bases are 0.
+  - Abstractness: 1 - interface definitions / all definitions. A small
+    interface over a large implementation is abstract; bases are 0.
   - Cohesion: references to the brick's own namespaces / references to any
     workspace namespace.
   - Clusters: groups of implementation definitions that don't reference
@@ -28,12 +28,15 @@
   - :unused-interface flags interface definitions that no other brick
     references.
 
-  Two rules take settings as a map with :level:
+  Three rules take settings as a map with :level:
 
   - :connascence-of-position {:max n} flags interface functions that other
     bricks call with more than n positional parameters.
   - :duplicate-code {:min-forms n} flags code of at least n forms that
-    appears in more than one brick (connascence of algorithm)."
+    appears in more than one brick (connascence of algorithm).
+  - :merge-candidates {:max-size r} flags a component whose only dependent
+    is another component, when its forms are at most r times the
+    dependent's."
   (:require
    [systems.thoughtfull.assay.dependencies.core :as core]))
 

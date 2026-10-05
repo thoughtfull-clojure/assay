@@ -381,7 +381,7 @@ import('https://cdn.jsdelivr.net/npm/mermaid@11.17.2/dist/mermaid.esm.min.mjs')
 
 (defn- dependency-rule-text
   "A dependency rule's [metric rule] text. Some rules have settings."
-  [rule {:keys [max min-forms]}]
+  [rule {:keys [max min-forms max-size]}]
   (case rule
     :stable-dependencies ["Stable dependencies" "only on more stable bricks"]
     :cycles ["Cycles" "none"]
@@ -392,6 +392,10 @@ import('https://cdn.jsdelivr.net/npm/mermaid@11.17.2/dist/mermaid.esm.min.mjs')
      (str "≤ " max " positional parameters in interface functions others call")]
     :duplicate-code
     ["Duplicate code" (str "none of ≥ " min-forms " forms across bricks")]
+    :merge-candidates
+    ["Merge candidates"
+     (str "no component with one component dependent, ≤ "
+       (Math/round (* 100 (double max-size))) "% of its size")]
     [(name rule) ""]))
 
 (defn- dependency-rows

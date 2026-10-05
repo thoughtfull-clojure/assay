@@ -7,11 +7,20 @@
   {:top-namespace "t" :interface-ns "interface"})
 
 (defn- source
+  "A source file of size forms, with a definition for every 10 forms."
   [ns forms & requires]
   {:file (str ns ".clj")
    :ns ns
    :forms forms
+   :definitions (vec (for [i (range (quot forms 10))]
+                       {:name (symbol (str "d" i)) :line 1 :references #{}}))
    :requires (mapv (fn [r] {:ns r :line 3}) requires)})
+
+(defn- brick-forms
+  "bricks with each brick's :forms metric, the sum of its sources'."
+  [bricks]
+  (mapv #(assoc-in % [:metrics :forms] (reduce + (map :forms (:sources %))))
+    bricks))
 
 (defn- brick
   [name type & sources]
@@ -53,19 +62,21 @@
       (is (= 0.5 (get-in m ["a" :instability])))
       (is (= 0.0 (get-in m ["b" :instability])))
       (is (= 1.0 (get-in m ["x" :instability]))))
-    (testing "abstractness: 1 - interface forms / all forms; bases are 0"
+    (testing "abstractness: 1 - interface definitions / all definitions;
+              bases are 0"
       (is (= 0.9 (get-in m ["a" :abstractness])))
       (is (= 0.5 (get-in m ["b" :abstractness])))
       (is (= 0.0 (get-in m ["x" :abstractness]))))
     (testing "no violations"
-      (is (empty? (dependencies/check {} analysis))))))
+      ;; The fixture's definitions refer to nothing, so none are used.
+      (is (empty? (dependencies/check {:unused-interface nil} analysis))))))
 
 (deftest isolated-brick-test
   (let [m (metrics-by-name
             (dependencies/analyze workspace
-              [(brick "lonely" :component (source 't.lonely.interface 5))]))]
+              [(brick "lonely" :component (source 't.lonely.interface 10))]))]
     (is (= {:afferent 0 :efferent 0 :instability nil :abstractness 0.0
-            :cohesion nil :clusters nil :unused-interface 0 :shared-keywords 0}
+            :cohesion nil :clusters nil :unused-interface 1 :shared-keywords 0}
           (m "lonely")))))
 
 (deftest check-test
@@ -87,12 +98,40 @@
             (set (map (comp :name :brick) (:dependency-cycle by-metric)))))
       (is (= #{"a, b, c"} (set (map :subject (:dependency-cycle by-metric))))))
     (testing "rules can be turned off or downgraded"
-      (is (empty? (dependencies/check {:stable-dependencies nil :cycles nil}
+      (is (empty? (dependencies/check {:stable-dependencies nil :cycles nil
+                                       :unused-interface nil}
                     analysis)))
       (is (every? #(= :warning (:level %))
             (dependencies/check {:stable-dependencies :warning
                                  :cycles :warning}
               analysis))))))
+
+(deftest merge-candidates-test
+  ;; s is used only by a, a component 10 times its size. a is used only by
+  ;; c, which is the same size. c is used only by base x.
+  (let [bricks (brick-forms
+                 (conj acyclic
+                   (brick "s" :component (source 't.s.interface 10))))
+        bricks (update-in bricks [0 :sources 1 :requires]
+                 conj {:ns 't.s.interface :line 4})
+        candidates (fn [rules]
+                     (filter #(= :merge-candidate (:metric %))
+                       (dependencies/check rules
+                         (dependencies/analyze workspace bricks))))
+        violations (candidates {})]
+    (testing "a small component with one component dependent"
+      (is (= [["s" "a" 0.1 :warning]]
+            (map (juxt (comp :name :brick) :subject :value :level)
+              violations)))
+      (is (re-find #"is used only by a, and has 10% as many forms"
+            (:message (first violations)))))
+    (testing ":max-size sets how small"
+      (is (empty? (candidates {:merge-candidates {:max-size 0.05}})))
+      (is (= #{"s" "a"}
+            (set (map (comp :name :brick)
+                   (candidates {:merge-candidates {:max-size 1.0}}))))))
+    (testing "a component used only by a base is not a candidate"
+      (is (not-any? #(= "c" (get-in % [:brick :name])) violations)))))
 
 (defn- defs
   [& specs]

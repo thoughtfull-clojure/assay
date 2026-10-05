@@ -45,8 +45,8 @@
     :total :mean}
    {:key :abstractness
     :label "Abstractness"
-    :description (str "1 - interface forms / all forms: how much the"
-                   " interface hides. Bases are 0.")
+    :description (str "1 - interface definitions / all definitions: how"
+                   " much the interface hides. Bases are 0.")
     :format :decimal
     :total :mean}
    {:key :cohesion
@@ -95,9 +95,11 @@
      " depends on little) to `1` (unstable: free to change, since nothing"
      " depends on it). Bricks should depend only on more stable bricks.")
    :abstractness
-   (str "`1 - interface forms / all forms`. A small interface over a large"
+   (str "`1 - interface definitions / all definitions`, counting `def`,"
+     " `defn`, `defmethod`, and the like. A small interface over a large"
      " implementation scores near `1`. A component whose interface is most"
-     " of its code hides little. Bases are `0`.")
+     " of its definitions hides little: at `0.5`, each interface definition"
+     " hides only one more. Bases are `0`.")
    :cohesion
    (str "`own references / workspace references`: how much the brick's"
      " code refers to its own namespaces rather than to other bricks."

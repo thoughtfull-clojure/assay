@@ -184,15 +184,35 @@ that edge in red. To fix one:
 
 ### Abstractness
 
-Abstractness measures how much of a component sits behind its interface.
-A small interface over a large implementation hides most of its code, so
-the implementation can change without affecting other bricks.
+Abstractness measures how much of a component sits behind its interface,
+by counting definitions. A small interface over a large implementation
+hides most of its code, so the implementation can change without affecting
+other bricks.
 
 Low abstractness means the interface is large compared with what it hides.
-Either the interface namespace holds implementation code, which belongs in
-an implementation namespace, or the component exposes more than its callers
-need. Abstractness matters most for stable components: a brick with many
-dependents and a large interface is hard to change in any way.
+At `0.5`, each interface definition hides only one more, so the component
+is a thin layer, a shallow module in John Ousterhout's terms. Either the
+interface namespace holds implementation code, which belongs in an
+implementation namespace, or the component exposes more than its callers
+need, or it does too little to earn its own brick. Abstractness matters
+most for stable components: a brick with many dependents and a large
+interface is hard to change in any way.
+
+### Merge candidates
+
+Every brick costs something: an interface to keep, a place in the
+dependency graph, and one more thing to name and find. A small component
+that only one other component uses may not repay that cost, and could live
+inside the component that uses it. Assay warns about a component whose only
+dependent is another component at least four times its size, by default.
+
+The warning asks a question rather than answering it. Merge the two when
+the small component exists only to serve the larger one. Keep it separate
+when it has a clear job of its own, when you expect other bricks to use it,
+or when it isolates a library or a side effect, as assay's `git` component
+does. A component that only a base uses doesn't count. That's the usual
+shape of a Polylith workspace, and moving its code into the base would put
+logic where Polylith says it doesn't belong.
 
 ### Cycles
 

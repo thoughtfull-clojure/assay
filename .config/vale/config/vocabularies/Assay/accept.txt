@@ -22,3 +22,4 @@ workspace's
 accessor
 multimethod
 namespaced
+Ousterhout's

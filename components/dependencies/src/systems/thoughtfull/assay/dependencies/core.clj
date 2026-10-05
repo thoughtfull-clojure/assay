@@ -11,7 +11,8 @@
    :new-dependencies :warning
    :unused-interface :warning
    :connascence-of-position {:max 3 :level :warning}
-   :duplicate-code {:min-forms 30 :level :warning}})
+   :duplicate-code {:min-forms 30 :level :warning}
+   :merge-candidates {:max-size 0.25 :level :warning}})
 
 (defn merge-rules
   "Merge configured rules over the defaults. A map-valued rule merges key
@@ -51,10 +52,11 @@
 
 (defn- abstractness
   [workspace own {:keys [brick sources]}]
-  (let [total (reduce + (map :forms sources))
-        interface (reduce + (map :forms (filter #(names/interface-ns? workspace own
-                                                   (:ns %))
-                                          sources)))]
+  (let [definitions #(count (mapcat :definitions %))
+        total (definitions sources)
+        interface (definitions (filter #(names/interface-ns? workspace own
+                                          (:ns %))
+                                 sources))]
     (cond
       (= :base (:type brick)) 0.0
       (zero? total) nil
@@ -204,6 +206,36 @@
      :location {:file file :line line :name (str name)}
      :message "is not used by any other brick"}))
 
+(defn- merge-candidate-violations
+  "Components with one dependent, itself a component, and at most max-size
+  times its forms. Moving one into a base would go against Polylith, so a
+  base's components don't count."
+  [{:keys [max-size level]} {:keys [bricks edges]}]
+  (let [index (brick-index bricks)
+        dependents (update-vals (group-by :to edges) #(distinct (map :from %)))]
+    (for [{:keys [brick metrics]} bricks
+          :let [[dependent & more] (dependents (:name brick))
+                other (index dependent)
+                size (when (and dependent (not more)
+                             (= :component (:type brick))
+                             (= :component (get-in other [:brick :type]))
+                             (pos? (get-in other [:metrics :forms] 0)))
+                       (/ (:forms metrics 0)
+                         (double (get-in other [:metrics :forms]))))]
+          :when (and size (<= size max-size))]
+      {:scope :dependency
+       :brick brick
+       :metric :merge-candidate
+       :label "Merge candidate"
+       :subject dependent
+       :value size
+       :limit max-size
+       :level level
+       :rule {:rule :merge-candidates}
+       :message (str "is used only by " dependent ", and has "
+                  (Math/round (* 100 size)) "% as many forms; consider"
+                  " merging it into " dependent)})))
+
 (defn- level
   "A rule's level: the rule itself, or its :level when it has settings."
   [rule]
@@ -212,7 +244,8 @@
 (defn check
   [rules {:keys [workspace bricks used] :as analysis}]
   (let [{:keys [stable-dependencies cycles unused-interface
-                connascence-of-position duplicate-code]} rules]
+                connascence-of-position duplicate-code
+                merge-candidates]} rules]
     (vec (concat
            (when stable-dependencies
              (stable-dependency-violations stable-dependencies analysis))
@@ -224,7 +257,9 @@
              (connascence/position-violations connascence-of-position
                workspace bricks used))
            (when (level duplicate-code)
-             (connascence/algorithm-violations duplicate-code bricks))))))
+             (connascence/algorithm-violations duplicate-code bricks))
+           (when (level merge-candidates)
+             (merge-candidate-violations merge-candidates analysis))))))
 
 (defn neighbors
   [bricks edges]
