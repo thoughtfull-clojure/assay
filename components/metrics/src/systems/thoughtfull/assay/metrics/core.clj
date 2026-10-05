@@ -561,3 +561,11 @@
      :sources (mapv #(select-keys % [:file :ns :requires :forms :definitions
                                      :keywords :fragments])
                 files)}))
+
+(def ^:private labels
+  {:brick (into {} (map (juxt :key :label)) metrics)
+   :function (into {} (map (juxt :key :label)) function-metrics)})
+
+(defn label
+  [{:keys [scope metric label]}]
+  (or label (get-in labels [(or scope :brick) metric]) (name metric)))

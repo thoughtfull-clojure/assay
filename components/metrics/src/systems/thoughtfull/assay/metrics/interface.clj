@@ -3,13 +3,6 @@
   (:require
    [systems.thoughtfull.assay.metrics.core :as core]))
 
-(def metrics
-  "Ordered brick metrics, each a map of :key, :label, :description, and
-  optionally :format (:decimal for fractional values). The dependency
-  metrics (afferent through abstractness) are computed by the dependencies
-  component."
-  core/metrics)
-
 (def function-metrics
   "Ordered function metrics, each a map of :key, :label, :description (a
   short tooltip), and :explanation (a longer legend entry)."
@@ -61,3 +54,10 @@
   Metrics with no meaningful total (afferent, efferent) are omitted."
   [measurements]
   (core/totals measurements))
+
+(defn label
+  "The display label of a violation, or of any map of :metric and optionally
+  :scope (:brick, the default, or :function). A :label in the map wins,
+  then the registry's label, then the metric's name."
+  [m]
+  (core/label m))

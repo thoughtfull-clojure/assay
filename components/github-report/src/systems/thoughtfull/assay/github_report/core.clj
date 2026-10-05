@@ -1,15 +1,8 @@
 (ns systems.thoughtfull.assay.github-report.core
   (:require
    [clojure.string :as str]
-   [systems.thoughtfull.assay.metrics.interface :as metrics]))
-
-(def ^:private labels
-  {:brick (into {} (map (juxt :key :label)) metrics/metrics)
-   :function (into {} (map (juxt :key :label)) metrics/function-metrics)})
-
-(defn- label
-  [{:keys [scope metric label]}]
-  (or label (get-in labels [(or scope :brick) metric]) (name metric)))
+   [systems.thoughtfull.assay.metrics.interface :as metrics]
+   [systems.thoughtfull.assay.thresholds.interface :as thresholds]))
 
 (defn- brick-label
   [{:keys [type name]}]
@@ -46,8 +39,8 @@
                 (:line location) (conj (str "line=" (:line location)))
                 :always (conj (str "title=" (escape-property
                                               (str (brick-label brick) ": "
-                                                (label violation))))))
-        text (str (label violation) " " message
+                                                (metrics/label violation))))))
+        text (str (metrics/label violation) " " message
                (when (:name location) (str " (" (:name location) ")"))
                (when (#{:existing :indirect} status)
                  (str " [" (name status) "]")))]
@@ -87,17 +80,13 @@
   (when file
     (str " (`" file ":" line "`" (when name (str " " name)) ")")))
 
-(defn- worse
-  [a b]
-  (if (some #{:error} [a b]) :error (or a b)))
-
 (defn- flagged-cells
   "Map of [brick name, metric] to the worst level of brick violations that
   a change introduced or, without a comparison, of all brick violations."
   [violations]
   (reduce
     (fn [acc {:keys [brick metric level]}]
-      (update acc [(:name brick) metric] worse level))
+      (update acc [(:name brick) metric] thresholds/worse-level level))
     {}
     (->> violations
       (filter #(= :brick (:scope % :brick)))
@@ -133,7 +122,7 @@
               (sort-by (comp status-order :status) violations)]
           (cond-> [(level-mark level)
                    (brick-label brick)
-                   (label violation)
+                   (metrics/label violation)
                    (str message (location-text location))]
             comparison (conj (name status))))))))
 
@@ -143,7 +132,7 @@
     (str "### Resolved\n\n"
       (table ["Brick" "Metric" "Detail"]
         (for [{:keys [brick message] :as violation} resolved]
-          [(brick-label brick) (label violation) message])))))
+          [(brick-label brick) (metrics/label violation) message])))))
 
 (defn- delta-text
   [k base head]
@@ -184,7 +173,7 @@
   [{:keys [bricks violations]}]
   (let [flagged (flagged-cells violations)
         column-level (fn [brick-name {:keys [keys]}]
-                       (reduce worse nil (map #(flagged [brick-name %]) keys)))]
+                       (reduce thresholds/worse-level nil (map #(flagged [brick-name %]) keys)))]
     (str "### Metrics\n\n"
       (table (cons "Brick" (map :label metrics/columns))
         (concat

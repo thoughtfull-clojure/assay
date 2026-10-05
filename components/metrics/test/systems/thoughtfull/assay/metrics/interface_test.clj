@@ -225,3 +225,9 @@
     (is same "the same code in different layouts hashes the same")
     (is (= [2 4] (map :line same)))
     (is (every? #(>= (:forms %) 20) fragments))))
+
+(deftest label-test
+  (is (= "Forms" (metrics/label {:metric :forms})))
+  (is (= "Parameters" (metrics/label {:scope :function :metric :params})))
+  (is (= "Custom" (metrics/label {:metric :forms :label "Custom"})))
+  (is (= "mystery" (metrics/label {:metric :mystery}))))

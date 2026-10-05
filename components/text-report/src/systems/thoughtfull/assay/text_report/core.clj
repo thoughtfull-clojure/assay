@@ -3,14 +3,6 @@
    [clojure.string :as str]
    [systems.thoughtfull.assay.metrics.interface :as metrics]))
 
-(def ^:private labels
-  {:brick (into {} (map (juxt :key :label)) metrics/metrics)
-   :function (into {} (map (juxt :key :label)) metrics/function-metrics)})
-
-(defn- label
-  [{:keys [scope metric label]}]
-  (or label (get-in labels [(or scope :brick) metric]) (name metric)))
-
 (defn- shown?
   [{:keys [status]}]
   (contains? #{nil :new} status))
@@ -21,7 +13,7 @@
     (if (:file location)
       (str (:file location) ":" (:line location))
       (:dir brick (:name brick)))
-    "  " (label violation) " " message
+    "  " (metrics/label violation) " " message
     (when (:name location) (str " (" (:name location) ")"))))
 
 (defn- plural

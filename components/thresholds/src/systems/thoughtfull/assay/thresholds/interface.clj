@@ -38,3 +38,8 @@
   when known, :location, :stats, and :subject (the function name)."
   [config measurements]
   (core/check config measurements))
+
+(defn worse-level
+  "The more severe of two levels: :error, :warning, or nil for none."
+  [a b]
+  (core/worse-level a b))

@@ -102,3 +102,8 @@
     (is (= [{:rule :max :value 1}] (get-in merged [:function-thresholds :forms])))
     (is (= (get-in thresholds/default-config [:function-thresholds :complexity])
           (get-in merged [:function-thresholds :complexity])))))
+
+(deftest worse-level-test
+  (is (= :error (thresholds/worse-level :warning :error)))
+  (is (= :warning (thresholds/worse-level nil :warning)))
+  (is (nil? (thresholds/worse-level nil nil))))

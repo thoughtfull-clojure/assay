@@ -1,7 +1,8 @@
 (ns systems.thoughtfull.assay.html-report.core
   (:require
    [clojure.string :as str]
-   [systems.thoughtfull.assay.metrics.interface :as metrics]))
+   [systems.thoughtfull.assay.metrics.interface :as metrics]
+   [systems.thoughtfull.assay.thresholds.interface :as thresholds]))
 
 ;; A minimal hiccup-style renderer: [:tag {attrs} & children]. Strings are
 ;; escaped unless wrapped in Raw; seqs are spliced; nil renders nothing.
@@ -110,18 +111,6 @@ details.legend dd code {
 }
 ")
 
-(defn- worse
-  [a b]
-  (if (some #{:error} [a b]) :error (or a b)))
-
-(def ^:private labels
-  {:brick (into {} (map (juxt :key :label)) metrics/metrics)
-   :function (into {} (map (juxt :key :label)) metrics/function-metrics)})
-
-(defn- label
-  [{:keys [scope metric label]}]
-  (or label (get-in labels [(or scope :brick) metric]) (name metric)))
-
 (defn- introduced?
   "True for violations that a change introduced, or for every violation
   when there is no comparison."
@@ -191,7 +180,7 @@ details.legend dd code {
               violations)]
         (cond-> [(level-badge level)
                  (brick-cell brick)
-                 (label v)
+                 (metrics/label v)
                  message
                  (location (:location v))]
           comparison (conj (badge (str "status " (name status))
@@ -201,7 +190,7 @@ details.legend dd code {
   [resolved]
   (table ["Brick" "Metric" "Detail"]
     (for [{:keys [brick message] :as v} resolved]
-      [(brick-cell brick) (label v) message])))
+      [(brick-cell brick) (metrics/label v) message])))
 
 ;; Metrics
 
@@ -240,7 +229,7 @@ details.legend dd code {
   (reduce
     (fn [acc {:keys [level message] :as v}]
       (-> acc
-        (update-in [(cell-key v) :level] worse level)
+        (update-in [(cell-key v) :level] thresholds/worse-level level)
         (update-in [(cell-key v) :messages] (fnil conj []) message)))
     {}
     (filter #(and (= scope (:scope % :brick)) (introduced? %)) violations)))
@@ -257,7 +246,7 @@ details.legend dd code {
   [flagged brick-name {:keys [keys]}]
   (let [flags (keep #(flagged [brick-name %]) keys)]
     (when (seq flags)
-      {:level (reduce worse nil (map :level flags))
+      {:level (reduce thresholds/worse-level nil (map :level flags))
        :messages (vec (mapcat :messages flags))})))
 
 (defn- metrics-table
@@ -359,7 +348,7 @@ details.legend dd code {
   (for [[metric rules] (sort-by key thresholds)
         {:keys [level] :or {level :error} :as rule} rules]
     [applies-to
-     (label {:scope scope :metric metric})
+     (metrics/label {:scope scope :metric metric})
      (rule-text rule)
      (level-badge level)]))
 

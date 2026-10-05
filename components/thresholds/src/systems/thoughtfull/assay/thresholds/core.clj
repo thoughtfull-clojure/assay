@@ -155,3 +155,7 @@
   [{:keys [brick-thresholds function-thresholds]} measurements]
   (vec (concat (brick-violations brick-thresholds measurements)
          (function-violations function-thresholds measurements))))
+
+(defn worse-level
+  [a b]
+  (if (some #{:error} [a b]) :error (or a b)))
