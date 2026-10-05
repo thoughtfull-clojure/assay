@@ -206,10 +206,18 @@ default, so `{:duplicate-code {:min-forms 50}}` keeps the default level.
 
 ## Continuous integration
 
-`.github/workflows/ci.yml` runs assay on every pull request with
-`--base origin/<target branch>`. Assay annotates the changed lines, writes
-a job summary, and uploads the HTML report as an artifact. The checkout
-needs `fetch-depth: 0` so assay can find the merge-base.
+`.github/workflows/ci.yml` runs assay on every pull request and push to
+`main`. Assay annotates the code, writes a job summary, and uploads the
+HTML report as an artifact.
+
+- **Pull requests** compare with `origin/<target branch>` and fail only on
+  new error-level violations, so a pull request isn't blocked by problems
+  it didn't introduce.
+- **Pushes to `main`** compare with the commit before the push, so the
+  summary shows what changed, and use `--fail-on all`, so any error-level
+  violation fails the build.
+
+The checkout needs `fetch-depth: 0` so assay can find earlier commits.
 
 ## Git hook
 

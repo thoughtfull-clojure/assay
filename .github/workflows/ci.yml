@@ -37,15 +37,24 @@ jobs:
         run: bb test
 
       # On pull requests, compare with the merge-base of the target branch and
-      # fail only on new error-level violations in changed bricks. On pushes,
-      # fail on any error-level violation.
+      # fail only on new error-level violations in changed bricks. On pushes to
+      # main, compare with the commit before the push, so the report shows what
+      # changed, but fail on any error-level violation.
       - name: Assay
         env:
           BASE_REF: ${{ github.base_ref }}
+          BEFORE: ${{ github.event.before }}
         run: |
           args=(--format github --format html)
           if [ -n "$BASE_REF" ]; then
             args+=(--base "origin/$BASE_REF")
+          else
+            # BEFORE is all zeros for a new branch, and a force push can
+            # leave it pointing at a commit that is gone.
+            if git cat-file -e "${BEFORE}^{commit}" 2>/dev/null; then
+              args+=(--base "$BEFORE")
+            fi
+            args+=(--fail-on all)
           fi
           bb assay "${args[@]}"
 
