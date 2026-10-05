@@ -124,13 +124,18 @@ than once to write several formats.
 
 Reports list only error-level violations unless you pass `--warnings`,
 and count the warnings they leave out. Warnings point to code worth
-refactoring before it reaches an error, but they never fail a run. The
-HTML and GitHub reports always include the metrics table, with a row of
-averages across all bricks. The table marks each value 2 or more standard
-deviations from the mean of all bricks: the HTML report outlines it, and
-the GitHub report sets it in bold. Afferent coupling, instability, and
-abstractness compare components only, since a base has no interface and no
-dependents.
+refactoring before it reaches an error, but they never fail a run.
+
+After the violations, the HTML and GitHub reports have three sections:
+dependencies (the graph, afferent and efferent coupling, and instability),
+complexity (size and function complexity), and modularity (abstractness,
+cohesion, and shared keywords). Each has a table of every brick, with a
+row of averages across all bricks. With `--base`, a changed brick's values
+show how much they changed, such as `12 (+3)`. The tables mark each value
+2 or more standard deviations from the mean of all bricks: the HTML report
+outlines it, and the GitHub report sets it in bold. Afferent coupling,
+instability, and abstractness compare components only, since a base has no
+interface and no dependents.
 
 Assay exits with status 1 when a brick or function exceeds an error-level
 threshold, and with status 2 for usage errors.

@@ -145,33 +145,6 @@
         (for [{:keys [brick message] :as violation} resolved]
           [(brick-label brick) (metrics/label violation) message])))))
 
-(defn- delta-text
-  [k base head]
-  (let [text (partial metrics/format-value k)]
-    (cond
-      (nil? head) (text head)
-      (nil? base) (str (text head) " (new)")
-      (= base head) (text head)
-      :else (str (text base) " → " (text head) " ("
-              (if (> head base) "+" "") (text (- head base)) ")"))))
-
-(defn- column-delta
-  [{:keys [keys]} base head]
-  (str/join " / " (map #(delta-text % (get base %) (get head %)) keys)))
-
-(defn- changes-section
-  [{:keys [bricks comparison]}]
-  (when-let [changed (seq (filter #((:changed-bricks comparison)
-                                    (:name (:brick %)))
-                            bricks))]
-    (str "### Changed bricks\n\n"
-      (table (cons "Brick" (map :label metrics/columns))
-        (for [{:keys [brick] :as m} changed
-              :let [base (get-in comparison [:base-metrics (:name brick)])]]
-          (cons (brick-label brick)
-            (for [column metrics/columns]
-              (column-delta column base (:metrics m)))))))))
-
 (defn- metric-cell
   [level text]
   (case level
@@ -187,43 +160,74 @@
     (table ["Metric" "Meaning"] (map (juxt :label :explanation) entries))
     "\n\n</details>"))
 
-(defn- bricks-section
-  "Every brick, then an average row, and the legend."
-  [{:keys [bricks violations]}]
+(defn- delta-text
+  "How much a column's metrics changed from base, such as \" (+3)\"."
+  [{:keys [keys]} base head]
+  (when base
+    (str/join
+      (for [k keys
+            :let [b (get base k) h (get head k)]
+            :when (and (some? b) (some? h) (not= b h))]
+        (str " (" (when (> h b) "+") (metrics/format-value k (- h b)) ")")))))
+
+(defn- section-table
+  "A section's columns for every brick, then an average row, a key for
+  bold outliers if there are any, and the legend. With a comparison, a
+  changed brick's values show how much they changed."
+  [columns {:keys [bricks violations comparison]}]
   (let [flagged (flagged-cells violations)
         outliers (metrics/outliers bricks metrics/outlier-std-devs)
-        column-level (fn [brick-name {:keys [keys]}]
+        outlier? (fn [brick-name {:keys [keys]}]
+                   (some #(outliers [brick-name %]) keys))
+        column-level (fn [brick-name {:keys [keys] :as column}]
                        (or (reduce thresholds/worse-level nil
                              (map #(flagged [brick-name %]) keys))
-                         (when (some #(outliers [brick-name %]) keys)
-                           :outlier)))
-        averages (metrics/averages bricks)]
-    (str "### Bricks summary\n\n"
-      (table (cons "Brick" (map :label metrics/columns))
+                         (when (outlier? brick-name column) :outlier)))
+        averages (metrics/averages bricks)
+        {:keys [changed-bricks base-metrics]} comparison]
+    (str
+      (table (cons "Brick" (map :label columns))
         (concat
-          (for [{:keys [brick] :as m} bricks]
-            (cons (brick-label brick)
-              (for [column metrics/columns]
-                (metric-cell (column-level (:name brick) column)
-                  (metrics/column-text column (:metrics m))))))
+          (for [{:keys [brick] :as m} bricks
+                :let [brick-name (:name brick)
+                      changed? (contains? changed-bricks brick-name)
+                      base (when changed? (base-metrics brick-name))]]
+            (cons (str (brick-label brick)
+                    (when (and changed? (nil? base)) " (new)"))
+              (for [column columns]
+                (metric-cell (column-level brick-name column)
+                  (str (metrics/column-text column (:metrics m))
+                    (delta-text column base (:metrics m)))))))
           [(cons "**Average**"
-             (for [column metrics/columns]
+             (for [column columns]
                (metrics/column-text column averages)))]))
-      "\n\nBold: " metrics/outlier-std-devs " or more standard deviations"
-      " from the mean of all bricks (of all components, for metrics that"
-      " only describe components)."
-      "\n\n" (legend metrics/columns))))
+      (when (some (fn [{:keys [brick]}]
+                    (some #(outlier? (:name brick) %) columns))
+              bricks)
+        (str "\n\nBold: " metrics/outlier-std-devs " or more standard"
+          " deviations from the mean of all bricks (of all components, for"
+          " metrics that only describe components)."))
+      "\n\n" (legend columns))))
 
-(defn- dependencies-section
+(defn- dependencies-graph
   "The brick graph as a Mermaid diagram, which GitHub renders."
   [{:keys [bricks edges violations]}]
   (when (seq edges)
-    (str "### Brick dependencies\n\n"
-      "Red: a dependency on a less stable brick. Dashed: new"
+    (str "Red: a dependency on a less stable brick. Dashed: new"
       " since the base.\n\n"
       "```mermaid\n"
       (dependencies/mermaid bricks edges violations)
       "\n```")))
+
+(defn- metric-sections
+  "A section for each group of metrics. Dependencies start with the brick
+  graph."
+  [report]
+  (for [{:keys [key label columns]} metrics/sections]
+    (str "### " label "\n\n"
+      (when (= :dependencies key)
+        (some-> (dependencies-graph report) (str "\n\n")))
+      (section-table columns report))))
 
 (defn summary
   [report]
@@ -233,7 +237,5 @@
             (headline report)
             (violations-section report)
             (resolved-section report)
-            (dependencies-section report)
-            (when (:comparison report) (changes-section report))
-            (bricks-section report)]))
+            (str/join "\n\n" (metric-sections report))]))
     "\n"))

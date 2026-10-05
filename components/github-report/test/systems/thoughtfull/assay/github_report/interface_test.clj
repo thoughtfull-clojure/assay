@@ -58,8 +58,8 @@
     (is (str/includes? summary
           (str "2 bricks, 1 new errors, 0 new warnings. Compared with"
             " `origin/main` (merge-base `0123456789ab`), 1 bricks changed.")))
-    (is (str/includes? summary "### Changed bricks"))
-    (is (str/includes? summary "4.0 → 12.0 (+8.0)"))
+    (is (str/includes? summary "| **12.0 (+8.0)** ❌ |")
+      "a changed brick's value shows how much it changed")
     (is (not (str/includes? summary "**300**"))
       "existing violations are not highlighted")
     (is (str/includes? summary "300 is 50%<br>high"))))
@@ -101,10 +101,10 @@
                        :message "12 is above the maximum of 10"})
                     (assoc :edges [{:from "a" :to "b"}])))
         sections (map second (re-seq #"(?m)^### (.*)$" summary))]
-    (is (= ["Violations" "Brick dependencies" "Bricks summary"] sections))
+    (is (= ["Violations" "Dependencies" "Complexity" "Modularity"] sections))
     (is (str/includes? summary "```mermaid\ngraph TD\n  b0[\"a\"]"))
-    (is (= 1 (count (re-seq #"<details><summary>What these metrics mean" summary)))
-      "a legend after the bricks")))
+    (is (= 3 (count (re-seq #"<details><summary>What these metrics mean" summary)))
+      "a legend in each section")))
 
 (deftest brick-annotation-test
   (is (= [(str "::warning file=components/a/deps.edn,line=1,"
@@ -119,8 +119,7 @@
     "a violation of a whole brick is anchored to the brick's deps.edn"))
 
 (deftest comparison-section-order-test
-  (is (= ["Violations" "Resolved" "Brick dependencies" "Changed bricks"
-          "Bricks summary"]
+  (is (= ["Violations" "Resolved" "Dependencies" "Complexity" "Modularity"]
         (map second (re-seq #"(?m)^### (.*)$"
                       (github-report/summary
                         (-> compared

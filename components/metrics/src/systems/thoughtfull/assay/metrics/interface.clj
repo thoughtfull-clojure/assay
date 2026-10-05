@@ -18,8 +18,9 @@
 (defn measure-brick
   "Measure every source file of brick (as returned by the workspace
   component), reading files relative to root. Returns a map of :brick,
-  :metrics (metric key to number, or nil when undefined), :functions, and :sources (each source file's :file, :ns, :requires,
-  :forms, and :definitions)."
+  :metrics (metric key to number, or nil when undefined), :functions, and
+  :sources (each source file's :file, :ns, :requires, :forms, and
+  :definitions)."
   [root brick]
   (core/measure-brick root brick))
 
@@ -28,6 +29,12 @@
   :description (a short tooltip), :explanation (a longer legend entry), and
   :keys, the metrics it shows."
   core/columns)
+
+(def sections
+  "Report sections in order, each a map of :key, :label, and :columns, the
+  columns (as in columns) it shows: dependencies, complexity, and
+  modularity."
+  core/sections)
 
 (defn format-value
   "Brick metric k's value v for display: decimals to their precision,

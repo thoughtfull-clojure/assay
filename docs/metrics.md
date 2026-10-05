@@ -144,7 +144,7 @@ functions.
 
 ### Outliers
 
-The bricks summary marks any value that is 2 or more standard deviations
+The report's brick tables mark any value that is 2 or more standard deviations
 from the mean of all bricks, in either direction: the HTML report outlines
 it, and the GitHub report sets it in bold. Afferent coupling, instability,
 and abstractness compare components only, since every base has no

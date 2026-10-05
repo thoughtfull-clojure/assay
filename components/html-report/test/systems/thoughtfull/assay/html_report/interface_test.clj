@@ -61,7 +61,10 @@
                                                 :value 50}]})))]
     (is (str/includes? html "<code>origin/main</code>"))
     (is (str/includes? html "<code>0123456789ab</code>"))
-    (is (str/includes? html "9.0 → 12.0"))
+    (is (str/includes? html
+          (str "<td class=\"num\" title=\"was 9.0\">12.0"
+            " <span class=\"up\">(+3.0)</span></td>"))
+      "a changed brick's value shows how much it changed")
     (is (str/includes? html ">existing</span>"))
     (is (str/includes? html "<h2>Resolved</h2>"))
     (is (str/includes? html "<td>Changes (with --base)</td><td>Forms</td><td>increase ≤ 50</td>"))
@@ -103,18 +106,27 @@
     (is (str/includes? html
           "<dt>Mean function complexity</dt><dd>The mean cyclomatic"))))
 
+(deftest new-brick-test
+  (is (str/includes?
+        (html-report/render
+          (assoc report :violations [] :comparison {:base-ref "main" :base-rev "0123456789ab"
+                                                    :changed-bricks #{"a"} :base-metrics {}
+                                                    :resolved []}))
+        "component</span> <span class=\"badge status\">new</span>")
+    "a changed brick missing from the base is new"))
+
 (deftest legend-code-test
   (is (str/includes? (html-report/render report)
         "<dd><code>Ce / (Ca + Ce)</code>, from <code>0</code>")))
 
 (deftest section-order-test
-  (is (= ["Violations" "Brick dependencies" "Bricks summary" "Thresholds"]
+  (is (= ["Violations" "Dependencies" "Complexity" "Modularity" "Thresholds"]
         (map second (re-seq #"<h2[^>]*>([^<]+)</h2>"
                       (html-report/render report))))))
 
 (deftest comparison-section-order-test
-  (is (= ["Violations" "Resolved" "Brick dependencies" "Changed bricks"
-          "Bricks summary" "Thresholds"]
+  (is (= ["Violations" "Resolved" "Dependencies" "Complexity" "Modularity"
+          "Thresholds"]
         (map second
           (re-seq #"<h2[^>]*>([^<]+)</h2>"
             (html-report/render

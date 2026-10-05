@@ -7,47 +7,58 @@
 
 (def metrics
   [{:key :files
+    :section :complexity
     :label "Files"
     :description "Clojure source files under src."}
    {:key :forms
+    :section :complexity
     :label "Forms"
     :description "Forms at any depth, including symbols and literals."}
    {:key :functions
+    :section :complexity
     :label "Functions"
     :description "defn, defn-, defmacro, and defmethod forms."}
    {:key :mean-function-complexity
+    :section :complexity
     :label "Mean function complexity"
     :description "Mean cyclomatic complexity of the brick's functions."
     :format :decimal
     :precision 1}
    {:key :mean-function-depth
+    :section :complexity
     :label "Mean nesting depth"
     :description "Mean nesting depth of the brick's functions."
     :format :decimal
     :precision 1}
    {:key :afferent
+    :section :dependencies
     :label "Afferent (Ca)"
     :description "Bricks that depend on this brick's interface."
     :components-only true}
    {:key :efferent
+    :section :dependencies
     :label "Efferent (Ce)"
     :description "Interfaces this brick depends on."}
    {:key :instability
+    :section :dependencies
     :label "Instability"
     :description "Ce / (Ca + Ce): 0 is stable, 1 is unstable."
     :format :decimal
     :components-only true}
    {:key :abstractness
+    :section :modularity
     :label "Abstractness"
     :description (str "1 - interface definitions / all definitions: how"
                    " much the interface hides. Bases are 0.")
     :format :decimal
     :components-only true}
    {:key :cohesion
+    :section :modularity
     :label "Cohesion"
     :description "Own-namespace references / all workspace references."
     :format :decimal}
    {:key :shared-keywords
+    :section :modularity
     :label "Shared keywords"
     :description "Keywords this brick uses that other bricks also use."}])
 
@@ -99,12 +110,21 @@
   (into {} (map (juxt :key identity)) metrics))
 
 (def columns
-  (mapv (fn [{:keys [key label description]}]
+  (mapv (fn [{:keys [key label description section]}]
           {:label label
            :description description
            :explanation (brick-explanations key)
+           :section section
            :keys [key]})
     metrics))
+
+(def sections
+  (vec (for [[key label] [[:dependencies "Dependencies"]
+                          [:complexity "Complexity"]
+                          [:modularity "Modularity"]]]
+         {:key key
+          :label label
+          :columns (filterv #(= key (:section %)) columns)})))
 
 (defn format-value
   [k v]

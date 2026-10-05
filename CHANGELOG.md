@@ -19,6 +19,10 @@ and assay follows [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.htm
 
 ### Changed
 
+- The reports group brick metrics into three sections, each with its own
+  table: dependencies, complexity, and modularity. With `--base`, a changed
+  brick's values in those tables show how much they changed, in place of
+  the Changed bricks table.
 - Bricks have mean nesting depth, over their functions, in place of max
   nesting depth.
 - The bricks summary ends with a row of averages across bricks, in place

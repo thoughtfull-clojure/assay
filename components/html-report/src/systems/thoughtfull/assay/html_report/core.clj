@@ -169,10 +169,12 @@ details.legend dd code {
     registry))
 
 (defn- brick-cell
-  "A brick's name and type, each kept on one line."
-  [brick]
-  (list [:span {:class "brick-name"} (:name brick)] " "
-    [:span {:class "type"} (name (:type brick))]))
+  "A brick's name and type, each kept on one line, and an optional tag."
+  ([brick] (brick-cell brick nil))
+  ([brick tag]
+   (list [:span {:class "brick-name"} (:name brick)] " "
+     [:span {:class "type"} (name (:type brick))]
+     (when tag (list " " (badge "status" tag))))))
 
 (def ^:private status-order
   {:new 0 nil 0 :indirect 1 :existing 2})
@@ -206,34 +208,6 @@ details.legend dd code {
       [(brick-cell brick) (metrics/label v) message])))
 
 ;; Metrics
-
-(defn- delta-content
-  [k base head]
-  (let [text (partial metrics/format-value k)]
-    (cond
-      (nil? head) (text head)
-      (nil? base) (list (text head) " " [:span {:class "type"} "new"])
-      (= base head) (text head)
-      :else (list (text base) " → " (text head) " "
-              [:span {:class (if (> head base) "up" "down")}
-               "(" (if (> head base) "+" "") (text (- head base)) ")"]))))
-
-(defn- delta-cell
-  [{:keys [keys]} base head]
-  [:td {:class "num"}
-   (interpose " / " (map #(delta-content % (get base %) (get head %)) keys))])
-
-(defn- changes-table
-  [bricks {:keys [changed-bricks base-metrics]}]
-  (let [changed (filter #(changed-bricks (:name (:brick %))) bricks)]
-    (if (empty? changed)
-      [:p {:class "none"} "No bricks changed."]
-      (table (cons "Brick" (metric-headers metrics/columns))
-        (for [{:keys [brick] :as m} changed]
-          (cons (brick-cell brick)
-            (for [column metrics/columns]
-              (delta-cell column (base-metrics (:name brick))
-                (:metrics m)))))))))
 
 (defn- flagged-cells
   "Map of a cell key, from cell-key, to the worst :level and the :messages
@@ -283,28 +257,71 @@ details.legend dd code {
       {:level (reduce thresholds/worse-level nil (map :level flags))
        :messages (vec (mapcat :messages flags))})))
 
-(defn- metrics-table
-  "The summary table: every brick, then an average row."
-  [bricks violations]
+(defn- deltas
+  "[k base head] for each of a column's metrics that changed from base."
+  [{:keys [keys]} base head]
+  (when base
+    (for [k keys
+          :let [b (get base k) h (get head k)]
+          :when (and (some? b) (some? h) (not= b h))]
+      [k b h])))
+
+(defn- delta-span
+  [[k base head]]
+  (list " " [:span {:class (if (> head base) "up" "down")}
+             "(" (when (> head base) "+") (metrics/format-value k (- head base))
+             ")"]))
+
+(defn- change-flags
+  "A column's flags with what each changed metric was in the base."
+  [flags changes]
+  (if (seq changes)
+    (update flags :messages (fnil into [])
+      (for [[k base] changes]
+        (str "was " (metrics/format-value k base))))
+    flags))
+
+(defn- section-table
+  "A section's columns for every brick, then an average row. With a
+  comparison, a changed brick's values show how much they changed, and a
+  key explains any outlined value."
+  [columns bricks violations comparison]
   (let [flagged (flagged-cells violations :brick
                   (juxt (comp :name :brick) :metric))
         outliers (metrics/outliers bricks metrics/outlier-std-devs)
-        averages (metrics/averages bricks)]
-    (table (cons "Brick" (metric-headers metrics/columns))
-      (concat
-        (for [{:keys [brick] :as m} bricks]
-          (cons (brick-cell brick)
-            (for [column metrics/columns
-                  :let [brick-name (:name brick)]]
-              (metric-cell (outlier-flags
-                             (column-flags flagged brick-name column)
-                             outliers brick-name column)
-                (metrics/column-text column (:metrics m))))))
-        [(with-meta
-           (cons "Average"
-             (for [column metrics/columns]
-               (metric-cell nil (metrics/column-text column averages))))
-           {:class "average"})]))))
+        averages (metrics/averages bricks)
+        {:keys [changed-bricks base-metrics]} comparison
+        outlined? (some (fn [{:keys [brick]}]
+                          (some (fn [{:keys [keys]}]
+                                  (some #(outliers [(:name brick) %]) keys))
+                            columns))
+                    bricks)]
+    (list
+      (table (cons "Brick" (metric-headers columns))
+        (concat
+          (for [{:keys [brick] :as m} bricks
+                :let [brick-name (:name brick)
+                      changed? (contains? changed-bricks brick-name)
+                      base (when changed? (base-metrics brick-name))]]
+            (cons (brick-cell brick (when (and changed? (nil? base)) "new"))
+              (for [column columns
+                    :let [changes (deltas column base (:metrics m))]]
+                (metric-cell (-> (column-flags flagged brick-name column)
+                               (outlier-flags outliers brick-name column)
+                               (change-flags changes))
+                  (list (metrics/column-text column (:metrics m))
+                    (map delta-span changes))))))
+          [(with-meta
+             (cons "Average"
+               (for [column columns]
+                 (metric-cell nil (metrics/column-text column averages))))
+             {:class "average"})]))
+      (when outlined?
+        [:p {:class "table-key"}
+         [:span {:class "outlier-key"}] " Outlined: "
+         metrics/outlier-std-devs " or more standard deviations from the"
+         " mean of all bricks (of all components, for metrics that only"
+         " describe components)."]))))
 
 (defn- inline-code
   "Text with `backticked` spans rendered as code."
@@ -353,8 +370,7 @@ import('https://cdn.jsdelivr.net/npm/mermaid@11.17.2/dist/mermaid.esm.min.mjs')
   "The brick graph, drawn by Mermaid, with the same information as a
   collapsed table that opens if Mermaid can't load."
   [{:keys [bricks edges violations]}]
-  (if (empty? edges)
-    [:p {:class "none"} "No dependencies between bricks."]
+  (when (seq edges)
     (list
       [:p {:class "graph-key"}
        "Red: a dependency on a less stable brick."
@@ -455,11 +471,6 @@ import('https://cdn.jsdelivr.net/npm/mermaid@11.17.2/dist/mermaid.esm.min.mjs')
      (list " · compared with " [:code base-ref] " (merge-base "
        [:code (subs base-rev 0 (min 12 (count base-rev)))] ")"))])
 
-(defn- changed-bricks-section
-  [{:keys [bricks comparison]}]
-  (when comparison
-    (list [:h2 "Changed bricks"] (changes-table bricks comparison))))
-
 (defn- resolved-section
   [{:keys [comparison]}]
   (when (seq (:resolved comparison))
@@ -472,16 +483,13 @@ import('https://cdn.jsdelivr.net/npm/mermaid@11.17.2/dist/mermaid.esm.min.mjs')
     [:h2 "Violations"]
     (violations-table violations comparison (:hidden-warnings report))
     (resolved-section report)
-    [:h2 "Brick dependencies"]
-    (dependencies-section report)
-    (changed-bricks-section report)
-    [:h2 "Bricks summary"]
-    (metrics-table bricks violations)
-    [:p {:class "table-key"}
-     [:span {:class "outlier-key"}] " Outlined: " metrics/outlier-std-devs
-     " or more standard deviations from the mean of all bricks (of all"
-     " components, for metrics that only describe components)."]
-    (legend metrics/columns)
+    (for [{:keys [key label columns]} metrics/sections]
+      (list
+        [:h2 label]
+        (when (= :dependencies key)
+          (dependencies-section report))
+        (section-table columns bricks violations comparison)
+        (legend columns)))
     (thresholds-section report)))
 
 (defn render
