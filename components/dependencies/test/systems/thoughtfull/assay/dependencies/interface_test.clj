@@ -227,8 +227,10 @@
            "  b0 --> b1\n"
            "  b1 -.-> b2\n"
            "  b2 --> b1\n"
+           "  b0 -.- b2\n"
            "  linkStyle 1 stroke:#d1242f,stroke-width:2px\n"
-           "  linkStyle 2 stroke:#d1242f,stroke-width:2px")
+           "  linkStyle 2 stroke:#d1242f,stroke-width:2px\n"
+           "  linkStyle 3 stroke:#b26b00,stroke-width:2px,stroke-dasharray:2 4")
         (dependencies/mermaid
           [{:brick {:name "cli" :type :base}}
            {:brick {:name "a" :type :component}}
@@ -237,4 +239,5 @@
            {:from "cli" :to "a"}]
           [{:metric :stable-dependencies :brick {:name "a"} :subject "b"}
            {:metric :stable-dependencies :brick {:name "b"} :subject "a"}
-           {:metric :new-dependency :brick {:name "a"} :subject "b"}]))))
+           {:metric :new-dependency :brick {:name "a"} :subject "b"}
+           {:metric :co-change :brick {:name "cli"} :subject "b"}]))))

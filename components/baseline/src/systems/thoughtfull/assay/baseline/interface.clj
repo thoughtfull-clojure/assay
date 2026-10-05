@@ -29,7 +29,9 @@
 
   - each violation's :status set to :new (in a changed brick and not in
     base), :existing (also in base), or :indirect (not in base, but in a
-    brick that did not change, as when a statistical threshold moves), and
+    brick that did not change, as when a statistical threshold moves); a
+    :historical? violation, from history rather than code, is :existing;
+    and
     its :base-value set to the metric's value in base;
   - a :new violation added for each change threshold exceeded by a changed
     brick, and for each new dependency edge;

@@ -55,6 +55,17 @@
                "increased by 30 in a new brick, above the maximum increase of 10"}
             (set (keep :message (:violations result))))))))
 
+(deftest historical-test
+  (is (= [:existing]
+        (map :status
+          (:violations
+           (baseline/compare-reports {:bricks [] :violations []}
+             {:bricks [(brick "a" {})]
+              :violations [(assoc (violation "a" :co-change)
+                             :historical? true)]}
+             #{"components/a/src/a.clj"} {}))))
+    "a violation from history is never new, even in a changed brick"))
+
 (deftest max-increase-percent-test
   (let [check (fn [base-m head-m]
                 (->> (baseline/compare-reports

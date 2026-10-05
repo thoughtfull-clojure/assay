@@ -57,7 +57,11 @@ brick depends on an interface, and so on every component that implements
 it.
 
 Both reports draw the graph with Mermaid. Red edges depend on a less
-stable brick, and with `--base`, dashed edges are new.
+stable brick, and with `--base`, dashed edges are new. Dotted amber lines
+without arrows join bricks that keep changing together in Git history
+although neither depends on the other: coupling the source doesn't show.
+The graph draws these lines without `--warnings` too, though the
+violations they stand for are warnings.
 The HTML report loads Mermaid from a CDN; offline, it shows the same
 dependencies as a table.
 
@@ -174,7 +178,10 @@ Assay reads `assay.edn` at the workspace root, or the file you pass to
                     :new-dependencies :warning
                     :connascence-of-position {:max 3 :level :warning}
                     :duplicate-code {:min-forms 30 :level :warning}
-                    :merge-candidates {:max-size 0.25 :level :warning}}
+                    :merge-candidates {:max-size 0.25 :level :warning}
+                    :co-change {:since "12 months" :min-shared 5
+                                :min-strength 0.5 :max-bricks-per-commit 5
+                                :level :warning}}
  :change-thresholds {:forms [{:rule :max-increase-percent :value 50}]}}
 ```
 
@@ -210,8 +217,17 @@ Dependency rules set a level, or `nil` to turn a check off:
   is another component, and whose forms are at most `:max-size` times that
   component's. A component that only a base uses doesn't count, since
   Polylith keeps logic out of bases.
+- `:co-change`: two bricks with no dependency path between them, in either
+  direction, that changed together in Git history. Assay reads the commits
+  since `:since` (any date `git log --since` accepts), leaving out merges
+  and commits that touch more than `:max-bricks-per-commit` bricks, such as
+  a reformat. A pair counts when it shares at least `:min-shared` commits,
+  and at least `:min-strength` of the less changed brick's commits. With
+  `--base`, these violations are always existing, since they come from
+  history rather than from the change. Without Git history, assay skips
+  the check.
 
-These three take a map with a `:level`. A configured map merges over the
+These four take a map with a `:level`. A configured map merges over the
 default, so `{:duplicate-code {:min-forms 50}}` keeps the default level.
 
 `:change-thresholds` apply only with `--base`, to the bricks that changed:

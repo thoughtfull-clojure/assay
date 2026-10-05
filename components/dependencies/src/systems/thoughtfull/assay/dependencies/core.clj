@@ -1,6 +1,7 @@
 (ns systems.thoughtfull.assay.dependencies.core
   (:require
    [clojure.string :as str]
+   [systems.thoughtfull.assay.dependencies.co-change :as co-change]
    [systems.thoughtfull.assay.dependencies.cohesion :as cohesion]
    [systems.thoughtfull.assay.dependencies.connascence :as connascence]
    [systems.thoughtfull.assay.dependencies.names :as names]))
@@ -10,7 +11,9 @@
    :new-dependencies :warning
    :connascence-of-position {:max 3 :level :warning}
    :duplicate-code {:min-forms 30 :level :warning}
-   :merge-candidates {:max-size 0.25 :level :warning}})
+   :merge-candidates {:max-size 0.25 :level :warning}
+   :co-change {:since "12 months" :min-shared 5 :min-strength 0.5
+               :max-bricks-per-commit 5 :level :warning}})
 
 (defn merge-rules
   "Merge configured rules over the defaults. A map-valued rule merges key
@@ -165,7 +168,7 @@
   [rules {:keys [workspace bricks used] :as analysis}]
   (let [{:keys [stable-dependencies
                 connascence-of-position duplicate-code
-                merge-candidates]} rules]
+                merge-candidates co-change]} rules]
     (vec (concat
            (when stable-dependencies
              (stable-dependency-violations stable-dependencies analysis))
@@ -175,7 +178,9 @@
            (when (level duplicate-code)
              (connascence/algorithm-violations duplicate-code bricks))
            (when (level merge-candidates)
-             (merge-candidate-violations merge-candidates analysis))))))
+             (merge-candidate-violations merge-candidates analysis))
+           (when (level co-change)
+             (co-change/violations co-change analysis))))))
 
 (defn neighbors
   [bricks edges]
@@ -214,7 +219,10 @@
         red (problem-edges violations)
         new-edges (into #{} (comp (filter #(= :new-dependency (:metric %)))
                               (map (juxt (comp :name :brick) :subject)))
-                    violations)]
+                    violations)
+        co-changes (distinct (for [{:keys [metric brick subject]} violations
+                                   :when (= :co-change metric)]
+                               [(:name brick) subject]))]
     (str/join "\n"
       (concat
         ["graph TD"]
@@ -222,6 +230,11 @@
         (for [[from to] pairs]
           (str "  " (ids from) (if (new-edges [from to]) " -.-> " " --> ")
             (ids to)))
+        (for [[a b] co-changes]
+          (str "  " (ids a) " -.- " (ids b)))
         (for [[i pair] (map-indexed vector pairs)
               :when (red pair)]
-          (str "  linkStyle " i " stroke:#d1242f,stroke-width:2px"))))))
+          (str "  linkStyle " i " stroke:#d1242f,stroke-width:2px"))
+        (for [i (range (count pairs) (+ (count pairs) (count co-changes)))]
+          (str "  linkStyle " i
+            " stroke:#b26b00,stroke-width:2px,stroke-dasharray:2 4"))))))

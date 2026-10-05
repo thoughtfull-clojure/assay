@@ -143,7 +143,8 @@ jobs:
     steps:
       - uses: actions/checkout@v7.0.1
         with:
-          # Assay compares with earlier commits, so it needs the history.
+          # Assay compares with earlier commits and reads the history for
+          # co-change coupling, so it needs the history.
           fetch-depth: 0
 
       - uses: actions/setup-java@v6.0.1

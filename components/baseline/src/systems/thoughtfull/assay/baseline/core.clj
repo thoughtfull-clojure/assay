@@ -56,8 +56,10 @@
   [(:name brick) metric rule subject])
 
 (defn- status
+  "A historical violation, from history rather than code, is never new."
   [base-keys changed violation]
   (cond
+    (:historical? violation) :existing
     (base-keys (violation-key violation)) :existing
     (changed (:name (:brick violation))) :new
     :else :indirect))

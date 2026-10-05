@@ -3,7 +3,9 @@
   Markdown job summary.
 
   A report is a map of :workspace (a name), :bricks (measurements from the
-  metrics component), and :violations (from the thresholds component)."
+  metrics component), :violations (from the thresholds component), and
+  optionally :graph-violations, the violations the dependency graph draws
+  when :violations leaves some out."
   (:require
    [systems.thoughtfull.assay.github-report.core :as core]))
 

@@ -33,6 +33,16 @@
       (str/split-lines (git root "diff" "--name-only" "--no-renames" "--relative" rev))
       (str/split-lines (git root "ls-files" "--others" "--exclude-standard")))))
 
+(defn log-files
+  [root since]
+  ;; Each commit starts with a NUL, then lists its files, one per line.
+  (->> (str/split (git root "log" "--no-merges" (str "--since=" since)
+                    "--format=%x00" "--name-only" "--relative")
+         #"\u0000")
+    (map #(into #{} (remove str/blank?) (str/split-lines %)))
+    (remove empty?)
+    vec))
+
 (defn extract
   [root rev dir]
   ;; Run from a subdirectory, git archive includes only that subdirectory,

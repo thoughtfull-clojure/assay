@@ -22,7 +22,7 @@
   - :new-dependencies flags a dependency that is not in the base, when
     comparing with one (applied by the baseline component).
 
-  Three rules take settings as a map with :level:
+  Four rules take settings as a map with :level:
 
   - :connascence-of-position {:max n} flags interface functions that other
     bricks call with more than n positional parameters.
@@ -30,7 +30,14 @@
     appears in more than one brick (connascence of algorithm).
   - :merge-candidates {:max-size r} flags a component whose only dependent
     is another component, when its forms are at most r times the
-    dependent's."
+    dependent's.
+  - :co-change {:since s :min-shared n :min-strength r
+    :max-bricks-per-commit m} flags two bricks with no dependency path
+    between them that changed together in at least n commits since s,
+    and in at least r of the less changed brick's commits. Commits that
+    touch more than m bricks don't count. check reads the commits from the
+    analysis's :commits, each a set of changed paths, and skips the rule
+    without them."
   (:require
    [systems.thoughtfull.assay.dependencies.core :as core]))
 
@@ -51,7 +58,7 @@
 
 (defn check
   "Violations of dependency rules (merged over default-rules) in an
-  analysis from analyze."
+  analysis from analyze, with :commits added for the :co-change rule."
   [rules analysis]
   (core/check (core/merge-rules rules) analysis))
 
@@ -70,7 +77,8 @@
 
 (defn mermaid
   "A Mermaid flowchart of the brick graph, top-down. Bases have rounded
-  ends. Edges in a stable-dependencies violation are red, and new
+  ends. Edges in a stable-dependencies violation are red, co-change
+  violations add dotted amber lines without arrows, and new
   dependencies (from comparing with a base) are dashed."
   [bricks edges violations]
   (core/mermaid bricks edges violations))

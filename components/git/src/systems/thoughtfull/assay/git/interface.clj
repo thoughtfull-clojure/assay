@@ -15,6 +15,13 @@
   [root rev]
   (core/changed-files root rev))
 
+(defn log-files
+  "For each commit since since (a Git date such as \"12 months\"), not
+  counting merges, the set of paths it changed under root, relative to
+  root."
+  [root since]
+  (core/log-files root since))
+
 (defn extract
   "Write the tree of rev under root (which may be a subdirectory of the
   repository) into the existing directory dir."

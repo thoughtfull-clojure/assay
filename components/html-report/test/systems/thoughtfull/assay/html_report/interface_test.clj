@@ -106,6 +106,14 @@
     (is (str/includes? html
           "<dt>Mean function complexity</dt><dd>The mean cyclomatic"))))
 
+(deftest graph-violations-test
+  (is (str/includes?
+        (html-report/render
+          (assoc report :graph-violations
+            [{:metric :co-change :brick {:name "a"} :subject "b"}]))
+        "b0 -.- b1")
+    "the graph draws violations the table leaves out"))
+
 (deftest new-brick-test
   (is (str/includes?
         (html-report/render

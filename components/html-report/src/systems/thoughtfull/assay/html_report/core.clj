@@ -369,13 +369,16 @@ import('https://cdn.jsdelivr.net/npm/mermaid@11.17.2/dist/mermaid.esm.min.mjs')
 (defn- dependencies-section
   "The brick graph, drawn by Mermaid, with the same information as a
   collapsed table that opens if Mermaid can't load."
-  [{:keys [bricks edges violations]}]
+  [{:keys [bricks edges violations graph-violations]}]
   (when (seq edges)
     (list
       [:p {:class "graph-key"}
        "Red: a dependency on a less stable brick."
-       " Dashed: new since the base."]
-      [:pre {:class "mermaid"} (dependencies/mermaid bricks edges violations)]
+       " Dashed: new since the base."
+       " Dotted amber, no arrow: bricks that change together but don't"
+       " depend on each other."]
+      [:pre {:class "mermaid"}
+       (dependencies/mermaid bricks edges (or graph-violations violations))]
       [:details {:class "legend dependency-table"}
        [:summary "Dependencies as a table"]
        (dependencies-table bricks edges)]
@@ -408,7 +411,7 @@ import('https://cdn.jsdelivr.net/npm/mermaid@11.17.2/dist/mermaid.esm.min.mjs')
 
 (defn- dependency-rule-text
   "A dependency rule's [metric rule] text. Some rules have settings."
-  [rule {:keys [max min-forms max-size]}]
+  [rule {:keys [max min-forms max-size since min-shared min-strength]}]
   (case rule
     :stable-dependencies ["Stable dependencies" "only on more stable bricks"]
     :new-dependencies ["New dependencies" "none the base didn't have"]
@@ -417,6 +420,11 @@ import('https://cdn.jsdelivr.net/npm/mermaid@11.17.2/dist/mermaid.esm.min.mjs')
      (str "≤ " max " positional parameters in interface functions others call")]
     :duplicate-code
     ["Duplicate code" (str "none of ≥ " min-forms " forms across bricks")]
+    :co-change
+    ["Co-change"
+     (str "no bricks without a dependency that changed together in ≥ "
+       min-shared " commits and ≥ " (Math/round (* 100 (double min-strength)))
+       "% of one's commits, over " since)]
     :merge-candidates
     ["Merge candidates"
      (str "no component with one component dependent, ≤ "

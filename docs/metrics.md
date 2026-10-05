@@ -227,6 +227,29 @@ does. A component that only a base uses doesn't count. That's the usual
 shape of a Polylith workspace, and moving its code into the base would put
 logic where Polylith says it doesn't belong.
 
+### Co-change
+
+Bricks that keep changing in the same commits depend on each other,
+whatever their requires say. When one requires the other, that's expected.
+When neither does, the source hides the coupling: the bricks share an
+assumption, a data format, or a feature split between them, and a change
+to one keeps needing a change to the other. Adam Tornhill calls this change coupling
+in *Your Code as a Crime Scene*, and it measures what John Ousterhout
+calls change amplification.
+
+Assay reads the last 12 months of history by default and warns about a
+pair with no dependency path between them that shares at least 5 commits,
+covering at least half of the less changed brick's commits. It leaves out
+commits that touch more than 5 bricks, since a reformat or a rename
+across the workspace says nothing about coupling. The graph joins each
+pair with a dotted amber line.
+
+To fix it, find what the two bricks agree on. Make that knowledge one
+brick's job, and have the other depend on it, so the coupling is visible
+in the graph. When the two bricks are two halves of one responsibility,
+consider merging them. Two report formats that change together because
+they render the same report is the kind of pair to look for.
+
 ### New dependencies
 
 With `--base`, assay warns about each dependency between bricks that the

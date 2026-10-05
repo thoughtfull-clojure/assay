@@ -211,12 +211,14 @@
 
 (defn- dependencies-graph
   "The brick graph as a Mermaid diagram, which GitHub renders."
-  [{:keys [bricks edges violations]}]
+  [{:keys [bricks edges violations graph-violations]}]
   (when (seq edges)
     (str "Red: a dependency on a less stable brick. Dashed: new"
-      " since the base.\n\n"
+      " since the base. Dotted amber, no arrow: bricks that change"
+      " together but don't depend on each other.\n\n"
       "```mermaid\n"
-      (dependencies/mermaid bricks edges violations)
+      (dependencies/mermaid bricks edges
+        (or graph-violations violations))
       "\n```")))
 
 (defn- metric-sections

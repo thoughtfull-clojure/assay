@@ -66,13 +66,26 @@
   [dir]
   (.exists (io/file dir "workspace.edn")))
 
-(defn- measure
-  "Measure and check the workspace at root."
+(defn- commits
+  "The commits the co-change rule looks at, or nil when it is off or root
+  has no Git history to read."
   [root config]
+  (let [{:keys [co-change]} (dependencies/merge-rules
+                              (:dependency-rules config))]
+    (when (:level co-change)
+      (try
+        (git/log-files root (:since co-change))
+        (catch clojure.lang.ExceptionInfo _ nil)))))
+
+(defn- measure
+  "Measure and check the workspace at root, with commits for the co-change
+  rule."
+  [root config commits]
   (let [rules (thresholds/merge-config config)
-        analysis (dependencies/analyze (workspace/config root)
-                   (mapv #(metrics/measure-brick root %)
-                     (workspace/bricks root)))
+        analysis (-> (dependencies/analyze (workspace/config root)
+                       (mapv #(metrics/measure-brick root %)
+                         (workspace/bricks root)))
+                   (assoc :commits commits))
         bricks (:bricks analysis)]
     {:bricks bricks
      :edges (:edges analysis)
@@ -100,7 +113,7 @@
       (git/extract root rev dir)
       (-> (baseline/compare-reports
             (if (workspace? dir)
-              (measure dir config)
+              (measure dir config nil)
               {:bricks [] :violations []})
             head
             (git/changed-files root rev)
@@ -118,7 +131,7 @@
   report map for the report components."
   [workspace-dir config base-ref]
   (let [root (.getCanonicalFile (io/file workspace-dir))
-        head (measure root config)]
+        head (measure root config (commits root config))]
     (-> (if base-ref
           (compare-with-base root config base-ref head)
           head)
@@ -170,11 +183,14 @@
 
 (defn- hide-warnings
   "Remove warning-level violations from report, counting in
-  :hidden-warnings those a change introduced (or all, without a base)."
+  :hidden-warnings those a change introduced (or all, without a base). The
+  graph still draws every violation, in :graph-violations, since the lines
+  for co-change and new dependencies show structure, not just problems."
   [report]
   (let [warning? #(= :warning (:level %))
         warnings (filter warning? (:violations report))]
     (cond-> (assoc report
+              :graph-violations (:violations report)
               :violations (vec (remove warning? (:violations report)))
               :hidden-warnings (count (filter #(contains? #{nil :new} (:status %))
                                         warnings)))

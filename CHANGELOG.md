@@ -9,6 +9,9 @@ and assay follows [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+- The `:co-change` dependency rule warns about two bricks that keep
+  changing together in Git history although neither depends on the
+  other, and the graph joins them with a dotted line.
 - The `:merge-candidates` dependency rule warns about a small component
   whose only dependent is another component, since it may belong inside
   that component.

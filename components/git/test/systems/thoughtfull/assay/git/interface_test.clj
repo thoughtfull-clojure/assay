@@ -44,6 +44,23 @@
     (is (thrown-with-msg? clojure.lang.ExceptionInfo #"git merge-base"
           (git/merge-base root "no-such-ref")))))
 
+(deftest log-files-test
+  (let [repo (temp-dir)
+        root (io/file repo "ws")]
+    (.mkdirs root)
+    (sh! repo "git" "init" "-q" "-b" "main")
+    (spit (io/file root "a.clj") "(ns a)")
+    (spit (io/file root "b.clj") "(ns b)")
+    (commit! repo "first")
+    (spit (io/file root "a.clj") "(ns a) (def x 1)")
+    (spit (io/file repo "outside.clj") "(ns outside)")
+    (commit! repo "second")
+    (spit (io/file repo "outside.clj") "(ns outside) (def x 1)")
+    (commit! repo "outside only")
+    (is (= [#{"a.clj"} #{"a.clj" "b.clj"}]
+          (git/log-files root "12 months"))
+      "newest first, paths relative to root, commits outside root left out")))
+
 (deftest subdirectory-test
   (let [repo (temp-dir)
         root (io/file repo "ws")
