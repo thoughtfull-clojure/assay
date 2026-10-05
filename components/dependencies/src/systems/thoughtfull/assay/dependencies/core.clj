@@ -254,24 +254,10 @@
                 nil)))
     violations))
 
-(def ^:private graph-config
-  "Mermaid settings carried in the diagram, so renderers that differ from
-  the HTML report's Mermaid (such as GitHub's) draw right-angled edges
-  like it does."
-  ["---" "config:" "  flowchart:" "    curve: step" "---"])
-
-(defn- padded
-  "A label padded with non-breaking spaces to at least min-length, so a
-  short name in a rounded shape is a pill rather than a circle in
-  renderers that size shapes tightly."
-  [label min-length]
-  (let [pad (apply str (repeat (quot (- min-length (count label)) 2) "#nbsp;"))]
-    (str pad label pad)))
-
 (defn- node
   [id {:keys [name type]}]
   (if (= :base type)
-    (str "  " id "([\"" (padded name 11) "\"])")
+    (str "  " id "([\"" name "\"])")
     (str "  " id "[\"" name "\"]")))
 
 (defn mermaid
@@ -286,7 +272,6 @@
                     violations)]
     (str/join "\n"
       (concat
-        graph-config
         ["graph TD"]
         (map #(node (ids (:name (:brick %))) (:brick %)) bricks)
         (for [[from to] pairs]

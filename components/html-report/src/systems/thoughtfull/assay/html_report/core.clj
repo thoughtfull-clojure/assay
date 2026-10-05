@@ -322,9 +322,11 @@ details.legend dd code {
 
 (def ^:private mermaid-script
   "Render .mermaid blocks with Mermaid from a CDN, in the page's color
-  scheme. If it can't load, open the dependency table instead."
+  scheme. If it can't load, open the dependency table instead. Mermaid 11
+  is pinned because it draws like GitHub's renderer, so the HTML and
+  GitHub reports match; Mermaid 12 lays graphs out differently."
   "
-import('https://cdn.jsdelivr.net/npm/mermaid@12.1.0/dist/mermaid.esm.min.mjs')
+import('https://cdn.jsdelivr.net/npm/mermaid@11.17.2/dist/mermaid.esm.min.mjs')
   .then(async ({default: mermaid}) => {
     const dark = matchMedia('(prefers-color-scheme: dark)').matches;
     mermaid.initialize({startOnLoad: false, theme: dark ? 'dark' : 'default'});

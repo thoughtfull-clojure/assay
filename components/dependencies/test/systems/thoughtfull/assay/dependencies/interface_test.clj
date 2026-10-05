@@ -208,9 +208,8 @@
           [{:from "a" :to "c"} {:from "a" :to "b"} {:from "a" :to "b"}]))))
 
 (deftest mermaid-test
-  (is (= (str "---\nconfig:\n  flowchart:\n    curve: step\n---\n"
-           "graph TD\n"
-           "  b0([\"#nbsp;#nbsp;#nbsp;#nbsp;cli#nbsp;#nbsp;#nbsp;#nbsp;\"])\n"
+  (is (= (str "graph TD\n"
+           "  b0([\"cli\"])\n"
            "  b1[\"a\"]\n"
            "  b2[\"b\"]\n"
            "  b0 --> b1\n"
