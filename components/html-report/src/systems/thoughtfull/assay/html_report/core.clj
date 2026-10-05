@@ -363,15 +363,27 @@ details.legend dd code {
      (rule-text rule)
      (level-badge level)]))
 
-(def ^:private dependency-rule-text
-  {:stable-dependencies ["Stable dependencies" "only on more stable bricks"]
-   :cycles ["Cycles" "none"]
-   :new-dependencies ["New dependencies" "none the base didn't have"]})
+(defn- dependency-rule-text
+  "A dependency rule's [metric rule] text. Some rules have settings."
+  [rule {:keys [max min-forms]}]
+  (case rule
+    :stable-dependencies ["Stable dependencies" "only on more stable bricks"]
+    :cycles ["Cycles" "none"]
+    :new-dependencies ["New dependencies" "none the base didn't have"]
+    :unused-interface ["Unused interface" "none"]
+    :connascence-of-position
+    ["Connascence of position"
+     (str "≤ " max " positional parameters in interface functions others call")]
+    :duplicate-code
+    ["Duplicate code" (str "none of ≥ " min-forms " forms across bricks")]
+    [(name rule) ""]))
 
 (defn- dependency-rows
   [rules]
-  (for [[rule level] (sort-by key rules)
-        :let [[metric text] (dependency-rule-text rule [(name rule) ""])]]
+  (for [[rule setting] (sort-by key rules)
+        :let [level (if (map? setting) (:level setting) setting)
+              [metric text] (dependency-rule-text rule
+                              (when (map? setting) setting))]]
     ["Dependencies" metric text (if level (level-badge level) "off")]))
 
 (defn- thresholds-section

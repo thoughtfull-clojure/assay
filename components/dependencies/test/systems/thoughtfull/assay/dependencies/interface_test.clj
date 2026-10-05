@@ -64,7 +64,8 @@
   (let [m (metrics-by-name
             (dependencies/analyze workspace
               [(brick "lonely" :component (source 't.lonely.interface 5))]))]
-    (is (= {:afferent 0 :efferent 0 :instability nil :abstractness 0.0}
+    (is (= {:afferent 0 :efferent 0 :instability nil :abstractness 0.0
+            :cohesion nil :clusters nil :unused-interface 0 :shared-keywords 0}
           (m "lonely")))))
 
 (deftest check-test
@@ -92,3 +93,110 @@
             (dependencies/check {:stable-dependencies :warning
                                  :cycles :warning}
               analysis))))))
+
+(defn- defs
+  [& specs]
+  (vec (for [[name & references] specs]
+         {:name name :line 1 :references (set references)})))
+
+(def ^:private cohesive
+  ;; a: interface delegates to core; core has two unrelated groups:
+  ;;   {f, helper} and {g}; core also uses b's interface twice.
+  ;; b: interface exposes used and unused; nothing else refers to unused.
+  [{:brick {:name "a" :type :component}
+    :metrics {}
+    :sources [{:file "a/interface.clj" :ns 't.a.interface :forms 10
+               :requires [{:ns 't.a.core :as 'core}]
+               :definitions (defs ['f 'core/f] ['g 'core/g])}
+              {:file "a/core.clj" :ns 't.a.core :forms 90
+               :requires [{:ns 't.b.interface :as 'b}
+                          {:ns 'clojure.string :as 'str}]
+               :definitions (defs ['f 'helper 'b/used 'str/join]
+                              ['helper 'b/used 'inc]
+                              ['g 'map])}]}
+   {:brick {:name "b" :type :component}
+    :metrics {}
+    :sources [{:file "b/interface.clj" :ns 't.b.interface :forms 5
+               :requires [{:ns 't.b.core :refer ['impl]}]
+               :definitions (defs ['used 'impl] ['unused 'impl])}
+              {:file "b/core.clj" :ns 't.b.core :forms 20
+               :requires []
+               :definitions (defs ['impl])}]}])
+
+(deftest cohesion-test
+  (let [analysis (dependencies/analyze workspace cohesive)
+        m (metrics-by-name analysis)]
+    (testing "own references / workspace references; libraries don't count"
+      ;; a: core/f, core/g, helper (own) vs b/used twice (other) = 3/5
+      (is (= 0.6 (get-in m ["a" :cohesion])))
+      ;; b: impl twice (referred), both own
+      (is (= 1.0 (get-in m ["b" :cohesion]))))
+    (testing "clusters among implementation definitions"
+      (is (= 2 (get-in m ["a" :clusters])) "{f helper} and {g}")
+      (is (= 1 (get-in m ["b" :clusters]))))
+    (testing "unused interface"
+      (is (= 2 (get-in m ["a" :unused-interface]))
+        "nothing depends on a, so all of its interface is unused")
+      (is (= ["unused"]
+            (keep #(when (= "b" (get-in % [:brick :name])) (str (:name %)))
+              (:unused-interface analysis)))))
+    (testing "unused interface violations"
+      (is (= [["b" "unused" :warning {:file "b/interface.clj" :line 1
+                                      :name "unused"}]]
+            (->> (dependencies/check {} analysis)
+              (filter #(= :unused-interface (:metric %)))
+              (filter #(= "b" (get-in % [:brick :name])))
+              (map (juxt (comp :name :brick) :subject :level :location))))))))
+
+(def ^:private connected
+  ;; b's interface function wide is used by a; narrow is used too; unused
+  ;; is wide but unused. Both bricks share :id; a also has :only-a.
+  ;; Both bricks contain fragment 99 (40 forms), and a also contains a
+  ;; smaller fragment 98 inside it, which b has too.
+  [{:brick {:name "a" :type :component}
+    :metrics {}
+    :functions []
+    :sources [{:file "a/core.clj" :ns 't.a.core :forms 100
+               :requires [{:ns 't.b.interface :as 'b}]
+               :definitions (defs ['f 'b/wide 'b/narrow])
+               :keywords #{:id :only-a}
+               :fragments [{:hash 99 :forms 40 :line 10 :end-line 20}
+                           {:hash 98 :forms 31 :line 12 :end-line 15}]}]}
+   {:brick {:name "b" :type :component}
+    :metrics {}
+    :functions [{:name "wide" :file "b/interface.clj" :line 3 :params 4}
+                {:name "narrow" :file "b/interface.clj" :line 5 :params 1}
+                {:name "unused" :file "b/interface.clj" :line 7 :params 5}]
+    :sources [{:file "b/interface.clj" :ns 't.b.interface :forms 10
+               :requires []
+               :definitions (defs ['wide] ['narrow] ['unused])
+               :keywords #{:id}
+               :fragments [{:hash 99 :forms 40 :line 30 :end-line 40}
+                           {:hash 98 :forms 31 :line 32 :end-line 35}]}]}])
+
+(deftest connascence-test
+  (let [analysis (dependencies/analyze workspace connected)
+        violations (group-by :metric (dependencies/check {} analysis))]
+    (testing "meaning: shared keywords"
+      (is (= {"a" 1 "b" 1}
+            (update-vals (metrics-by-name analysis) :shared-keywords))))
+    (testing "position: only interface functions other bricks use"
+      (is (= [["b" "wide" 4 {:file "b/interface.clj" :line 3 :name "wide"}]]
+            (map (juxt (comp :name :brick) :subject :value :location)
+              (:connascence-of-position violations)))))
+    (testing "algorithm: the largest duplicated fragment, in each brick"
+      (is (= #{["a" 40 10] ["b" 40 30]}
+            (set (map (juxt (comp :name :brick) :value (comp :line :location))
+                   (:duplicate-code violations)))))
+      (is (re-find #"duplicates 40 forms in b \(b/interface.clj:30\)"
+            (:message (first (filter #(= "a" (get-in % [:brick :name]))
+                               (:duplicate-code violations)))))))
+    (testing "settings merge over the defaults"
+      (is (empty? (:duplicate-code
+                   (group-by :metric
+                     (dependencies/check {:duplicate-code {:min-forms 50}}
+                       analysis)))))
+      (is (= [:warning]
+            (distinct (map :level (dependencies/check
+                                    {:connascence-of-position {:max 2}}
+                                    analysis))))))))

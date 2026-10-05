@@ -18,8 +18,10 @@
 (defn measure-source
   "Measure a string of Clojure source from file (a path used for locations).
   Returns a map of :file, :ns and :requires (from its ns form, if any),
-  :forms, :top-level-forms, :max-nesting-depth, :max-nesting-location, and
-  :functions. Each function is a map of :name, :file, :line, :complexity,
+  :forms, :top-level-forms, :max-nesting-depth, :max-nesting-location,
+  :functions, and :definitions. Each definition (def, defn, defmulti, and
+  so on) is a map of :name (a symbol), :line, and :references, the set of
+  symbols in its body. Each function is a map of :name, :file, :line, :complexity,
   :depth (with :depth-line, the line of its deepest form), :forms, and
   :params."
   [file source]
@@ -30,8 +32,8 @@
   component), reading files relative to root. Returns a map of :brick,
   :metrics (metric key to number, or nil when undefined), :locations
   (metric key to the {:file :line :name} responsible for a max-* metric),
-  :functions, and :sources (each source file's :file, :ns, :requires, and
-  :forms)."
+  :functions, and :sources (each source file's :file, :ns, :requires,
+  :forms, and :definitions)."
   [root brick]
   (core/measure-brick root brick))
 

@@ -6,6 +6,7 @@ docstrings
 (?i)assay
 (?i)babashka
 (?i)claude
+(?i)connascence
 (?i)cyclomatic
 kaocha
 namespace

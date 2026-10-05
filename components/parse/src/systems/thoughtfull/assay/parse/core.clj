@@ -31,9 +31,25 @@
   (when (= :token (n/tag node))
     (n/sexpr node)))
 
+(defn- libspec-options
+  "The :as alias and :refer symbols of a libspec's options, when present."
+  [option-nodes]
+  (let [options (into {}
+                  (for [[k v] (partition 2 option-nodes)
+                        :when (keyword? (token-value k))]
+                    [(token-value k) v]))
+        alias (some-> (options :as) token-value)
+        refer (when-let [v (options :refer)]
+                (when (= :vector (n/tag v))
+                  (vec (filter symbol? (map token-value (code-children v))))))]
+    (cond-> {}
+      (symbol? alias) (assoc :as alias)
+      (seq refer) (assoc :refer refer))))
+
 (defn- libspec-entries
-  "Required namespaces of one :require or :use entry, each a map of :ns and
-  :line. Handles symbols, libspec vectors, and prefix lists."
+  "Required namespaces of one :require or :use entry, each a map of :ns,
+  :line, and when present :as and :refer. Handles symbols, libspec vectors,
+  and prefix lists."
   [node]
   (let [line (:row (meta node))
         children (code-children node)
@@ -47,15 +63,16 @@
 
       (or (nil? second-child) (keyword? (token-value second-child)))
       (if (symbol? (token-value head))
-        [{:ns (token-value head) :line line}]
+        [(merge {:ns (token-value head) :line line}
+           (libspec-options (rest children)))]
         [])
 
       :else
       (let [prefix (token-value head)]
         (for [child (rest children)
-              {:keys [ns line]} (libspec-entries child)
-              :when (and prefix ns)]
-          {:ns (symbol (str prefix "." ns)) :line line})))))
+              entry (libspec-entries child)
+              :when prefix]
+          (update entry :ns #(symbol (str prefix "." %))))))))
 
 (defn ns-info
   [forms]

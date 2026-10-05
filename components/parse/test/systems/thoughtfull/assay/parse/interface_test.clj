@@ -31,18 +31,18 @@
 (deftest ns-info-test
   (is (= {:ns 'a.b
           :line 2
-          :requires [{:ns 'c.d :line 4}
+          :requires [{:ns 'c.d :line 4 :as 'd :refer ['x 'y]}
                      {:ns 'e.f :line 5}
                      {:ns 'g.h :line 6}
                      {:ns 'i.j :line 7}
-                     {:ns 'i.k :line 7}
+                     {:ns 'i.k :line 7 :as 'k}
                      {:ns 'l.m :line 8}]}
         (parse/ns-info
           (parse/parse-string
             (str "; header\n"
               "(ns a.b\n"
               "  (:require\n"
-              "   [c.d :as d]\n"
+              "   [c.d :as d :refer [x y]]\n"
               "   e.f\n"
               "   [g.h]\n"
               "   [i j [k :as k]])\n"

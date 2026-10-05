@@ -51,11 +51,46 @@ it.
 | --- | --- |
 | Afferent (Ca) | Bricks that depend on this brick |
 | Efferent (Ce) | Interfaces this brick depends on |
-| Instability | Ce / (Ca + Ce): 0 is stable, 1 is unstable |
-| Abstractness | 1 − interface forms / all forms; bases are 0 |
+| Instability | `Ce / (Ca + Ce)`: `0` is stable, `1` is unstable |
+| Abstractness | `1 - interface forms / all forms`; bases are `0` |
 
 Abstractness measures how much a component's interface hides: a small
 interface over a large implementation is abstract.
+
+### Cohesion
+
+Assay resolves the symbols each definition refers to through its
+namespace's aliases and refers.
+
+| Metric | Meaning |
+| --- | --- |
+| Cohesion | `own references / workspace references`; libraries don't count |
+| Clusters | Groups of implementation definitions that share no references |
+| Unused interface | Interface definitions that no other brick refers to |
+| Shared keywords | Keywords that another brick also uses (see connascence) |
+
+Low cohesion means a brick is mostly glue between other bricks. More than
+one cluster means parts of a brick share nothing and might be separate
+bricks. Clusters leave out the interface namespace, which would otherwise
+join everything it delegates to.
+
+### Connascence
+
+Connascence is what two pieces of code must agree on, so that changing
+one means changing the other. Within a brick it's expected; between
+bricks it's coupling. Assay checks the kinds it can read from source:
+
+- **Position**: an interface function that other bricks call with many
+  positional parameters. Every caller depends on their order.
+- **Meaning**: the Shared keywords metric counts the keywords a brick uses
+  that another brick also uses, usually map keys both must agree on. It
+  isn't checked by default, since passing maps between bricks is normal.
+- **Algorithm**: the same code in more than one brick, ignoring layout
+  and comments. Assay reports the largest duplicated form, not every form
+  inside it.
+
+Assay can't see the runtime kinds, such as execution order and timing,
+from source.
 
 ## Usage
 
@@ -116,7 +151,10 @@ Assay reads `.config/assay.edn` in the workspace, or the file you pass to
                                     :types #{:component}}]}
  :dependency-rules {:stable-dependencies :error
                     :cycles :error
-                    :new-dependencies :warning}
+                    :new-dependencies :warning
+                    :unused-interface :warning
+                    :connascence-of-position {:max 3 :level :warning}
+                    :duplicate-code {:min-forms 30 :level :warning}}
  :change-thresholds {:forms [{:rule :max-increase-percent :value 50}]}}
 ```
 
@@ -145,6 +183,15 @@ Dependency rules set a level, or `nil` to turn a check off:
 - `:cycles`: two or more bricks depend on each other in a loop.
 - `:new-dependencies`: with `--base`, a dependency between bricks that the
   base didn't have.
+- `:unused-interface`: an interface definition that no other brick refers
+  to. Tests don't count, since assay reads only `src`.
+- `:connascence-of-position`, with `:max`: an interface function that other
+  bricks call has more than `:max` positional parameters.
+- `:duplicate-code`, with `:min-forms`: code of at least `:min-forms` forms
+  appears in more than one brick.
+
+These two take a map with a `:level`. A configured map merges over the
+default, so `{:duplicate-code {:min-forms 50}}` keeps the default level.
 
 `:change-thresholds` apply only with `--base`, to the bricks that changed:
 

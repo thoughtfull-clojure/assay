@@ -48,7 +48,23 @@
     :description (str "1 - interface forms / all forms: how much the"
                    " interface hides. Bases are 0.")
     :format :decimal
-    :total :mean}])
+    :total :mean}
+   {:key :cohesion
+    :label "Cohesion"
+    :description "Own-namespace references / all workspace references."
+    :format :decimal
+    :total :mean}
+   {:key :clusters
+    :label "Clusters"
+    :description "Groups of implementation definitions that share no references."
+    :total :max}
+   {:key :unused-interface
+    :label "Unused interface"
+    :description "Interface definitions no other brick uses."
+    :total :sum}
+   {:key :shared-keywords
+    :label "Shared keywords"
+    :description "Keywords this brick uses that other bricks also use."}])
 
 ;; Explanations are legend entries. Code and formulas are in backticks,
 ;; which reports render as code.
@@ -81,7 +97,25 @@
    :abstractness
    (str "`1 - interface forms / all forms`. A small interface over a large"
      " implementation scores near `1`. A component whose interface is most"
-     " of its code hides little. Bases are `0`.")})
+     " of its code hides little. Bases are `0`.")
+   :cohesion
+   (str "`own references / workspace references`: how much the brick's"
+     " code refers to its own namespaces rather than to other bricks."
+     " References to libraries don't count. A low value means the brick"
+     " is mostly glue between other bricks.")
+   :clusters
+   (str "Groups of the brick's implementation definitions (outside the"
+     " interface) that don't refer to each other, after LCOM4. More than"
+     " `1` means parts of the brick share nothing, and might be separate"
+     " bricks.")
+   :unused-interface
+   (str "Interface definitions that no other brick refers to: API that"
+     " can be removed, or that only tests use. Bases have no interface.")
+   :shared-keywords
+   (str "Keywords this brick uses that another brick also uses: usually"
+     " map keys that both must agree on (connascence of meaning). Renaming"
+     " one means changing every brick that shares it. Keywords that are"
+     " Clojure syntax, such as `:as` and `:keys`, don't count.")})
 
 (def ^:private function-explanations
   {:complexity
@@ -351,9 +385,17 @@
   (inc (reduce + (map decisions
                    (tree-seq n/inner? parse/code-children node)))))
 
+(defn- unwrap-meta
+  "The node that metadata such as ^:private is attached to, or node."
+  [node]
+  (if (= :meta (some-> node n/tag))
+    (last (parse/code-children node))
+    node))
+
 (defn- function-name
   [node]
-  (let [[_ name-node dispatch] (parse/code-children node)]
+  (let [[_ name-node dispatch] (parse/code-children node)
+        name-node (unwrap-meta name-node)]
     (cond-> (n/string name-node)
       (= "defmethod" (parse/head-symbol node))
       (str " " (n/string dispatch)))))
@@ -385,6 +427,74 @@
      :forms (count (tree-seq n/inner? parse/code-children node))
      :params (apply max 0 (map positional-params (param-vectors node)))}))
 
+;; Keywords and fragments, for connascence of meaning and of algorithm
+
+(def ^:private syntax-keywords
+  "Keywords that are Clojure syntax rather than data."
+  #{:as :refer :refer-clojure :require :use :import :exclude :rename :only
+    :all :keys :strs :syms :or :let :when :while :else :default :pre :post
+    :private :dynamic :const :doc :arglists :tag :added :deprecated
+    :gen-class :load :reload :verbose :as-alias})
+
+(defn- keywords
+  "Data keywords in forms other than the ns form."
+  [top-level]
+  (into (sorted-set)
+    (comp (remove #(= "ns" (parse/head-symbol %)))
+      (mapcat #(tree-seq n/inner? parse/code-children %))
+      (keep token-value)
+      (filter keyword?)
+      (remove syntax-keywords))
+    top-level))
+
+(def fragment-min-forms
+  "The fewest forms in a fragment kept for duplicate detection."
+  20)
+
+(defn- canonical
+  "Form count and a canonical string of node, ignoring whitespace and
+  comments, with the fragments of at least fragment-min-forms forms in its
+  tree, each {:hash :forms :line :end-line}."
+  [node]
+  (if-let [children (when (n/inner? node) (parse/code-children node))]
+    (let [results (map canonical children)
+          forms (inc (reduce + (map :forms results)))
+          text (str "(" (name (n/tag node)) " "
+                 (str/join " " (map :text results)) ")")
+          {:keys [row end-row]} (meta node)]
+      {:forms forms
+       :text text
+       :fragments (cond-> (vec (mapcat :fragments results))
+                    (>= forms fragment-min-forms)
+                    (conj {:hash (hash text) :forms forms
+                           :line row :end-line end-row}))})
+    {:forms 1
+     :text (n/string node)
+     :fragments []}))
+
+(defn- fragments
+  [top-level]
+  (vec (mapcat (comp :fragments canonical)
+         (remove #(= "ns" (parse/head-symbol %)) top-level))))
+
+(def ^:private definition-heads
+  #{"def" "defn" "defn-" "defmacro" "defmulti" "defmethod" "defonce"})
+
+(defn- definition
+  "A top-level definition's :name (a symbol), :line, and :references, the
+  symbols in its body. A defmethod is named for its multimethod."
+  [node]
+  (let [[_ name-node & body] (parse/code-children node)
+        definition-name (token-value (unwrap-meta name-node))]
+    (when (symbol? definition-name)
+      {:name definition-name
+       :line (:row (meta node))
+       :references (into #{}
+                     (comp (mapcat #(tree-seq n/inner? parse/code-children %))
+                       (keep token-value)
+                       (filter symbol?))
+                     body)})))
+
 (defn measure-source
   [file source]
   (let [forms (parse/parse-string source)
@@ -408,7 +518,14 @@
        :functions (->> top-level
                     (filter #(contains? function-heads
                                (parse/head-symbol %)))
-                    (mapv #(function file %)))})))
+                    (mapv #(function file %)))
+       :definitions (->> top-level
+                      (filter #(contains? definition-heads
+                                 (parse/head-symbol %)))
+                      (keep definition)
+                      vec)
+       :keywords (keywords top-level)
+       :fragments (fragments top-level)})))
 
 (defn- max-by
   [k xs]
@@ -441,4 +558,6 @@
                   deepest
                   (assoc :max-nesting-depth (:max-nesting-location deepest)))
      :functions functions
-     :sources (mapv #(select-keys % [:file :ns :requires :forms]) files)}))
+     :sources (mapv #(select-keys % [:file :ns :requires :forms :definitions
+                                     :keywords :fragments])
+                files)}))

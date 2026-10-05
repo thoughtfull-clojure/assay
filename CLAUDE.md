@@ -22,8 +22,10 @@ interfaces; `poly check` enforces this.
   file's namespace and requires. To add a metric, compute it in `function`
   or `measure-brick` and add it to `function-metrics` or `metrics`.
 - `dependencies`: the brick dependency graph from requires; afferent,
-  efferent, instability, and abstractness (interface ratio); and
-  the stable-dependencies and cycle checks.
+  efferent, instability, and abstractness (interface ratio); cohesion,
+  clusters, and unused interface from resolved symbol references (the
+  `cohesion` namespace); connascence of position, meaning, and algorithm
+  (the `connascence` namespace); and the dependency rule checks.
 - `thresholds`: brick and function rules (`:max`, `:min`, and `:std-devs`
   for bricks). To add a rule type, add a method to `evaluate`.
 - `baseline`: compares with a base report; change rules are methods of

@@ -106,7 +106,7 @@
             (git/changed-files root rev)
             {:changes (:change-thresholds config)
              :new-dependencies (:new-dependencies
-                                (merge dependencies/default-rules
+                                (dependencies/merge-rules
                                   (:dependency-rules config)))})
         (update :comparison assoc :base-ref ref :base-rev rev))
       (finally
@@ -125,7 +125,7 @@
       (assoc :workspace (.getName root)
         :generated-at (str (java.time.Instant/now))
         :change-thresholds (:change-thresholds config)
-        :dependency-rules (merge dependencies/default-rules
+        :dependency-rules (dependencies/merge-rules
                             (:dependency-rules config))))))
 
 (defn- failed?

@@ -154,9 +154,15 @@
                         {:file file :line 3 :name "branchy"}
                         :max-nesting-depth {:file file :line 3
                                             :name "branchy"}}
-            :sources [{:file file :ns (quote c) :requires [] :forms 22}]}
-          (dissoc (metrics/measure-brick root {:name "c" :files [file]})
-            :functions)))))
+            :sources [{:file file :ns (quote c) :requires [] :forms 22
+                       :definitions [{:name (quote simple) :line 2
+                                      :references #{(quote x)}}
+                                     {:name (quote branchy) :line 3
+                                      :references (set (map symbol
+                                                         ["x" "if" "when"]))}]}]}
+          (-> (metrics/measure-brick root {:name "c" :files [file]})
+            (dissoc :functions)
+            (update :sources (partial mapv #(dissoc % :keywords :fragments))))))))
 
 (deftest columns-test
   (is (= ["Files" "Forms" "Functions" "Function complexity"]
@@ -175,7 +181,10 @@
           :max-function-complexity 6
           :max-nesting-depth 5
           :instability 0.5
-          :abstractness nil}
+          :abstractness nil
+          :cohesion nil
+          :clusters nil
+          :unused-interface 0}
         (metrics/totals
           [{:metrics {:files 1 :forms 10 :functions 1
                       :mean-function-complexity 6.0
@@ -188,3 +197,31 @@
                       :instability 0.75 :afferent 1}
             :functions [{:complexity 1} {:complexity 2} {:complexity 3}]}]))
     "the mean complexity is over all functions, not a mean of brick means"))
+
+(deftest definitions-test
+  (is (= [{:name 'labels :line 1 :references #{'metrics/metrics 'into}}
+          {:name 'f :line 2 :references #{'labels}}]
+        (:definitions
+         (measure "(def ^:private labels (into {} metrics/metrics))\n(defn ^:private f [] labels)"))))
+  (is (= "f" (-> (measure "(defn ^:private f [] 1)") :functions first :name))
+    "metadata isn't part of a function's name"))
+
+(deftest keywords-test
+  (is (= #{:id :name :x/qualified}
+        (:keywords (measure (str "(ns foo (:require [a :as b]))\n"
+                              "(defn f [{:keys [id]}] {:id id :name 1"
+                              " :x/qualified 2})"))))
+    "data keywords only: not the ns form or syntax like :keys"))
+
+(deftest fragments-test
+  (let [big (str "(let [a 1 b 2 c 3 d 4 e 5] (+ a b c d e) (* a b c d e))")
+        {:keys [fragments]} (measure (str "(defn f []\n  " big ")\n"
+                                       "(defn g [] ; different layout\n"
+                                       "  (let [a 1 b 2 c 3 d 4 e 5]\n"
+                                       "    (+ a b c d e)\n"
+                                       "    (* a b c d e)))"))
+        by-hash (group-by :hash fragments)
+        same (first (filter #(= 2 (count %)) (vals by-hash)))]
+    (is same "the same code in different layouts hashes the same")
+    (is (= [2 4] (map :line same)))
+    (is (every? #(>= (:forms %) 20) fragments))))
