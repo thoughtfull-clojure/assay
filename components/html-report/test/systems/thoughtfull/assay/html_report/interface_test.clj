@@ -119,13 +119,13 @@
       "only the offending analyze is highlighted, not its namesake")))
 
 (deftest section-order-test
-  (is (= ["Violations" "Functions" "Dependencies" "Bricks" "Thresholds"]
+  (is (= ["Violations" "Functions to review" "Brick dependencies" "Bricks summary" "Thresholds"]
         (map second (re-seq #"<h2[^>]*>([^<]+)</h2>"
                       (html-report/render report))))))
 
 (deftest comparison-section-order-test
-  (is (= ["Violations" "Resolved" "Functions" "Dependencies" "Changed bricks"
-          "Bricks" "Thresholds"]
+  (is (= ["Violations" "Resolved" "Functions to review" "Brick dependencies" "Changed bricks"
+          "Bricks summary" "Thresholds"]
         (map second
           (re-seq #"<h2[^>]*>([^<]+)</h2>"
             (html-report/render

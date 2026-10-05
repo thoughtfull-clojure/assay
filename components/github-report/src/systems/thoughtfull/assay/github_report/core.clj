@@ -123,9 +123,10 @@
   {:new 0 nil 0 :indirect 1 :existing 2})
 
 (defn- violations-section
-  [{:keys [violations comparison]}]
-  (when (seq violations)
-    (str "### Violations\n\n"
+  [{:keys [violations comparison hidden-warnings]}]
+  (str "### Violations\n\n"
+    (if (empty? violations)
+      (if hidden-warnings "No errors." "No thresholds exceeded.")
       (table (cond-> ["Level" "Brick" "Metric" "Detail"]
                comparison (conj "Status"))
         (for [{:keys [brick level message location status] :as violation}
@@ -193,7 +194,7 @@
                        (reduce thresholds/worse-level nil
                          (map #(flagged [brick-name %]) keys)))
         totals (metrics/totals bricks)]
-    (str "### Bricks\n\n"
+    (str "### Bricks summary\n\n"
       (table (cons "Brick" (map :label metrics/columns))
         (concat
           (for [{:keys [brick] :as m} bricks]
@@ -227,7 +228,7 @@
         functions (metrics/notable-functions bricks
                     #(flagged-fns [(:name (:brick %)) (metrics/function-id %)]) n)]
     (when (seq functions)
-      (str "### Functions\n\n"
+      (str "### Functions to review\n\n"
         (table (concat ["Function" "Brick"]
                  (map :label metrics/function-metrics)
                  ["Location"])
@@ -244,7 +245,7 @@
   "The brick graph as a Mermaid diagram, which GitHub renders."
   [{:keys [bricks edges violations]}]
   (when (seq edges)
-    (str "### Dependencies\n\n"
+    (str "### Brick dependencies\n\n"
       "Red: a dependency on a less stable brick, or a cycle. Dashed: new"
       " since the base.\n\n"
       "```mermaid\n"

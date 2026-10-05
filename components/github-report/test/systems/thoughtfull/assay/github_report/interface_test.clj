@@ -89,14 +89,14 @@
                        :message "12 is above the maximum of 10"})
                     (assoc :edges [{:from "a" :to "b"}])))
         sections (map second (re-seq #"(?m)^### (.*)$" summary))]
-    (is (= ["Violations" "Functions" "Dependencies" "Bricks"] sections))
+    (is (= ["Violations" "Functions to review" "Brick dependencies" "Bricks summary"] sections))
     (is (str/includes? summary
           "| `f` | a | **12** ❌ | 3 | 40 | 1 | `components/a/src/a.clj:7` |")
       "the function's offending value is highlighted")
     (is (str/includes? summary "```mermaid\ngraph TD\n  b0[\"a\"]"))
     (is (= 2 (count (re-seq #"<details><summary>What these metrics mean" summary)))
       "a legend after the bricks and after the functions")
-    (is (str/includes? summary "</details>\n\n### Dependencies")
+    (is (str/includes? summary "</details>\n\n### Brick dependencies")
       "the functions legend closes before the dependencies section")
     (is (str/includes? summary "| Parameters | Positional parameters"))))
 
@@ -113,8 +113,8 @@
     "a violation of a whole brick is anchored to the brick's deps.edn"))
 
 (deftest comparison-section-order-test
-  (is (= ["Violations" "Resolved" "Functions" "Dependencies" "Changed bricks"
-          "Bricks"]
+  (is (= ["Violations" "Resolved" "Functions to review" "Brick dependencies" "Changed bricks"
+          "Bricks summary"]
         (map second (re-seq #"(?m)^### (.*)$"
                       (github-report/summary
                         (-> compared
@@ -125,3 +125,10 @@
                           (assoc-in [:comparison :resolved]
                             [{:brick {:name "z" :type :component}
                               :metric :forms :message "fixed"}]))))))))
+
+(deftest no-violations-test
+  (is (str/includes? (github-report/summary (assoc report :violations []))
+        "### Violations\n\nNo thresholds exceeded."))
+  (is (str/includes? (github-report/summary (assoc report :violations []
+                                              :hidden-warnings 3))
+        "### Violations\n\nNo errors.")))
