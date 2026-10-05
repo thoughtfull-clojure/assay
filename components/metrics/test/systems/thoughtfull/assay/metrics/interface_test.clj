@@ -167,8 +167,6 @@
           :instability 0.5
           :abstractness nil
           :cohesion nil
-          :clusters nil
-          :unused-interface nil
           :shared-keywords nil}
         (metrics/averages
           [{:brick {:type :component}

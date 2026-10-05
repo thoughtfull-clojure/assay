@@ -68,15 +68,14 @@
       (is (= 0.5 (get-in m ["b" :abstractness])))
       (is (= 0.0 (get-in m ["x" :abstractness]))))
     (testing "no violations"
-      ;; The fixture's definitions refer to nothing, so none are used.
-      (is (empty? (dependencies/check {:unused-interface nil} analysis))))))
+      (is (empty? (dependencies/check {} analysis))))))
 
 (deftest isolated-brick-test
   (let [m (metrics-by-name
             (dependencies/analyze workspace
               [(brick "lonely" :component (source 't.lonely.interface 10))]))]
     (is (= {:afferent 0 :efferent 0 :instability nil :abstractness 0.0
-            :cohesion nil :clusters nil :unused-interface 1 :shared-keywords 0}
+            :cohesion nil :shared-keywords 0}
           (m "lonely")))))
 
 (deftest check-test
@@ -93,12 +92,9 @@
       (is (re-find #"depends on c \(instability 0\.5\), which is less stable than b \(0\.33\)"
             (:message (first (:stable-dependencies by-metric))))))
     (testing "rules can be turned off or downgraded"
-      (is (empty? (dependencies/check {:stable-dependencies nil :unused-interface nil}
-                    analysis)))
+      (is (empty? (dependencies/check {:stable-dependencies nil} analysis)))
       (is (every? #(= :warning (:level %))
-            (dependencies/check {:stable-dependencies :warning
-                                 :unused-interface :warning}
-              analysis))))))
+            (dependencies/check {:stable-dependencies :warning} analysis))))))
 
 (deftest merge-candidates-test
   ;; s is used only by a, a component 10 times its size. a is used only by
@@ -133,9 +129,8 @@
          {:name name :line 1 :references (set references)})))
 
 (def ^:private cohesive
-  ;; a: interface delegates to core; core has two unrelated groups:
-  ;;   {f, helper} and {g}; core also uses b's interface twice.
-  ;; b: interface exposes used and unused; nothing else refers to unused.
+  ;; a: interface delegates to core, which also uses b's interface twice.
+  ;; b: interface delegates to impl, referred from core.
   [{:brick {:name "a" :type :component}
     :metrics {}
     :sources [{:file "a/interface.clj" :ns 't.a.interface :forms 10
@@ -163,23 +158,7 @@
       ;; a: core/f, core/g, helper (own) vs b/used twice (other) = 3/5
       (is (= 0.6 (get-in m ["a" :cohesion])))
       ;; b: impl twice (referred), both own
-      (is (= 1.0 (get-in m ["b" :cohesion]))))
-    (testing "clusters among implementation definitions"
-      (is (= 2 (get-in m ["a" :clusters])) "{f helper} and {g}")
-      (is (= 1 (get-in m ["b" :clusters]))))
-    (testing "unused interface"
-      (is (= 2 (get-in m ["a" :unused-interface]))
-        "nothing depends on a, so all of its interface is unused")
-      (is (= ["unused"]
-            (keep #(when (= "b" (get-in % [:brick :name])) (str (:name %)))
-              (:unused-interface analysis)))))
-    (testing "unused interface violations"
-      (is (= [["b" "unused" :warning {:file "b/interface.clj" :line 1
-                                      :name "unused"}]]
-            (->> (dependencies/check {} analysis)
-              (filter #(= :unused-interface (:metric %)))
-              (filter #(= "b" (get-in % [:brick :name])))
-              (map (juxt (comp :name :brick) :subject :level :location))))))))
+      (is (= 1.0 (get-in m ["b" :cohesion]))))))
 
 (def ^:private connected
   ;; b's interface function wide is used by a; narrow is used too; unused

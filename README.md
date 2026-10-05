@@ -82,14 +82,9 @@ namespace's aliases and refers.
 | Metric | Meaning |
 | --- | --- |
 | Cohesion | `own references / workspace references`; libraries don't count |
-| Clusters | Groups of implementation definitions that share no references |
-| Unused interface | Interface definitions that no other brick refers to |
 | Shared keywords | Keywords that another brick also uses (see connascence) |
 
-Low cohesion means a brick is mostly glue between other bricks. More than
-one cluster means parts of a brick share nothing and might be separate
-bricks. Clusters leave out the interface namespace, which would otherwise
-join everything it delegates to.
+Low cohesion means a brick is mostly glue between other bricks.
 
 ### Connascence
 
@@ -133,9 +128,9 @@ refactoring before it reaches an error, but they never fail a run. The
 HTML and GitHub reports always include the metrics table, with a row of
 averages across all bricks. The table marks each value 2 or more standard
 deviations from the mean of all bricks: the HTML report outlines it, and
-the GitHub report sets it in bold. Afferent coupling, instability,
-abstractness, and unused interface compare components only, since a base
-has no interface and no dependents.
+the GitHub report sets it in bold. Afferent coupling, instability, and
+abstractness compare components only, since a base has no interface and no
+dependents.
 
 Assay exits with status 1 when a brick or function exceeds an error-level
 threshold, and with status 2 for usage errors.
@@ -172,7 +167,6 @@ Assay reads `assay.edn` at the workspace root, or the file you pass to
                                     :types #{:component}}]}
  :dependency-rules {:stable-dependencies :error
                     :new-dependencies :warning
-                    :unused-interface :warning
                     :connascence-of-position {:max 3 :level :warning}
                     :duplicate-code {:min-forms 30 :level :warning}
                     :merge-candidates {:max-size 0.25 :level :warning}}
@@ -203,8 +197,6 @@ Dependency rules set a level, or `nil` to turn a check off:
   breaks the Stable Dependencies Principle.
 - `:new-dependencies`: with `--base`, a dependency between bricks that the
   base didn't have.
-- `:unused-interface`: an interface definition that no other brick refers
-  to. Tests don't count, since assay reads only `src`.
 - `:connascence-of-position`, with `:max`: an interface function that other
   bricks call has more than `:max` positional parameters.
 - `:duplicate-code`, with `:min-forms`: code of at least `:min-forms` forms

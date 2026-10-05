@@ -396,7 +396,6 @@ import('https://cdn.jsdelivr.net/npm/mermaid@11.17.2/dist/mermaid.esm.min.mjs')
   (case rule
     :stable-dependencies ["Stable dependencies" "only on more stable bricks"]
     :new-dependencies ["New dependencies" "none the base didn't have"]
-    :unused-interface ["Unused interface" "none"]
     :connascence-of-position
     ["Connascence of position"
      (str "≤ " max " positional parameters in interface functions others call")]

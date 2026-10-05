@@ -47,13 +47,6 @@
     :label "Cohesion"
     :description "Own-namespace references / all workspace references."
     :format :decimal}
-   {:key :clusters
-    :label "Clusters"
-    :description "Groups of implementation definitions that share no references."}
-   {:key :unused-interface
-    :label "Unused interface"
-    :description "Interface definitions no other brick uses."
-    :components-only true}
    {:key :shared-keywords
     :label "Shared keywords"
     :description "Keywords this brick uses that other bricks also use."}])
@@ -96,14 +89,6 @@
      " code refers to its own namespaces rather than to other bricks."
      " References to libraries don't count. A low value means the brick"
      " is mostly glue between other bricks.")
-   :clusters
-   (str "Groups of the brick's implementation definitions (outside the"
-     " interface) that don't refer to each other, after LCOM4. More than"
-     " `1` means parts of the brick share nothing, and might be separate"
-     " bricks.")
-   :unused-interface
-   (str "Interface definitions that no other brick refers to: API that"
-     " can be removed, or that only tests use. Bases have no interface.")
    :shared-keywords
    (str "Keywords this brick uses that another brick also uses: usually"
      " map keys that both must agree on (connascence of meaning). Renaming"

@@ -32,6 +32,8 @@ and assay follows [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.htm
 
 ### Removed
 
+- The clusters and unused interface metrics, and the `:unused-interface`
+  dependency rule.
 - Max function complexity for bricks, since the function rules catch the
   most complex functions.
 - The `:cycles` dependency rule, since `poly check` reports cycles between

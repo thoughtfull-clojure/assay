@@ -26,7 +26,7 @@
    :thresholds {:brick-thresholds {:abstractness [{:rule :min :value 0.5
                                                    :types #{:component}}]}
                 :function-thresholds {:complexity [{:rule :max :value 10}]}}
-   :dependency-rules {:unused-interface :warning :stable-dependencies nil}})
+   :dependency-rules {:new-dependencies :warning :stable-dependencies nil}})
 
 (deftest render-test
   (let [html (html-report/render report)]

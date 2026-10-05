@@ -15,8 +15,8 @@ harder to read.
 Some habits make the metrics useful:
 
 - **Look at combinations.** One high number is often fine. A brick that is
-  large, has several clusters, and many dependents is a much stronger
-  signal than any one of those alone.
+  large, has low cohesion, and many dependents is a much stronger signal
+  than any one of those alone.
 - **Watch the trend.** With `--base`, assay shows what a change made worse.
   A function whose complexity went from 4 to 9 in one pull request deserves
   more attention than one that has sat at 11 for a year.
@@ -118,8 +118,8 @@ so compare them with the brick's peers and with the brick's history.
 ### Size: files, forms, and functions
 
 Size alone isn't a problem, but a large brick is more likely to hold
-several responsibilities. When a brick grows well past its peers, check its
-clusters: more than one suggests where to split it. A
+several responsibilities. When a brick grows well past its peers, look for
+parts that don't use each other, which suggest where to split it. A
 `:max-increase-percent` change threshold catches a brick that grows
 suddenly, often because a feature landed in the wrong place.
 
@@ -147,8 +147,8 @@ functions.
 The bricks summary marks any value that is 2 or more standard deviations
 from the mean of all bricks, in either direction: the HTML report outlines
 it, and the GitHub report sets it in bold. Afferent coupling, instability,
-abstractness, and unused interface compare components only, since every
-base has no interface and no dependents. A marked value isn't a
+and abstractness compare components only, since every base has no
+interface and no dependents. A marked value isn't a
 violation. It shows where a brick differs from the rest of the workspace,
 which is worth understanding: a brick much larger than the others, or with
 far more dependents, may be doing more than its
@@ -244,24 +244,6 @@ inside the brick. A low value means the brick mostly calls other bricks.
 That's expected of a base, but a component that is mostly glue may not
 earn its place. Consider moving its logic into the bricks it calls, or
 merging it with the brick it uses most.
-
-### Clusters
-
-A cluster is a group of implementation definitions that refer to each
-other. Two clusters share nothing, so they could live in separate bricks
-without either noticing. More than one cluster suggests a split: move each
-cluster to its own component, or to the existing brick it fits best.
-
-A small brick of unrelated helpers can have many clusters and still be
-fine. Splitting it would add bricks without making anything clearer.
-
-### Unused interface
-
-An interface definition that no other brick refers to is code to maintain
-with no caller. Remove it, or move it out of the interface if the brick
-uses it internally. Assay reads only `src`, so a function that only tests
-call counts as unused. If it exists for tests, consider testing through
-the functions that callers do use.
 
 ### Shared keywords
 

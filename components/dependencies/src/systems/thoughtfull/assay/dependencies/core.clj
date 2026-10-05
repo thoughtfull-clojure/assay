@@ -8,7 +8,6 @@
 (def default-rules
   {:stable-dependencies :error
    :new-dependencies :warning
-   :unused-interface :warning
    :connascence-of-position {:max 3 :level :warning}
    :duplicate-code {:min-forms 30 :level :warning}
    :merge-candidates {:max-size 0.25 :level :warning}})
@@ -89,7 +88,6 @@
     {:edges edges
      :workspace workspace
      :used (:used cohesion-analysis)
-     :unused-interface (:unused cohesion-analysis)
      :bricks (vec
                (for [{:keys [brick] :as m} measurements
                      :let [brick-name (:name brick)]]
@@ -128,19 +126,6 @@
                   "), which is less stable than " from " ("
                   (fmt i-from) ")")})))
 
-(defn- unused-interface-violations
-  [level {:keys [unused-interface]}]
-  (for [{:keys [brick name file line]} unused-interface]
-    {:scope :dependency
-     :brick brick
-     :metric :unused-interface
-     :label "Interface definition"
-     :subject (str name)
-     :level level
-     :rule {:rule :unused-interface}
-     :location {:file file :line line :name (str name)}
-     :message "is not used by any other brick"}))
-
 (defn- merge-candidate-violations
   "Components with one dependent, itself a component, and at most max-size
   times its forms. Moving one into a base would go against Polylith, so a
@@ -178,14 +163,12 @@
 
 (defn check
   [rules {:keys [workspace bricks used] :as analysis}]
-  (let [{:keys [stable-dependencies unused-interface
+  (let [{:keys [stable-dependencies
                 connascence-of-position duplicate-code
                 merge-candidates]} rules]
     (vec (concat
            (when stable-dependencies
              (stable-dependency-violations stable-dependencies analysis))
-           (when unused-interface
-             (unused-interface-violations unused-interface analysis))
            (when (level connascence-of-position)
              (connascence/position-violations connascence-of-position
                workspace bricks used))
