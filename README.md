@@ -8,7 +8,8 @@ a Git hook.
 To add assay to a workspace as a command, a Git hook, and a GitHub Actions
 job, see [Setting up assay](docs/setup.md). The
 [sample report](docs/sample-report.html) is assay's report on itself;
-download it and open it in a browser to view it.
+download it and open it in a browser to view it. To learn why the metrics
+matter and what to do about them, see [Using assay's metrics](docs/metrics.md).
 
 ## Metrics
 

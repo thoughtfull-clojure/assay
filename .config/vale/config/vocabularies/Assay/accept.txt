@@ -19,3 +19,6 @@ technosophist
 Tonsky
 vendored
 workspace's
+accessor
+multimethod
+namespaced
