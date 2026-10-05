@@ -54,8 +54,8 @@ the [sample report](sample-report.html) for what it looks like.
 
 ## Configure thresholds
 
-Assay works without configuration. To change thresholds, add
-`.config/assay.edn` to the workspace. The README's
+Assay works without configuration. To change thresholds, add `assay.edn`
+at the workspace root, or pass another file with `--config`. The README's
 [configuration section](../README.md#configuration) lists every setting and
 its default.
 

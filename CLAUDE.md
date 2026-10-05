@@ -103,6 +103,11 @@ on. Only files that must sit at the root stay there: `deps.edn`,
 `workspace.edn`, `tests.edn` (kaocha), `bb.edn`, `devenv.*`, and
 `.gitignore`.
 
+That layout is this repository's preference, not assay's: assay's default
+config is `assay.edn` at the workspace root. This repository passes
+`--config .config/assay.edn` in the `bb assay` task and the `:run` alias,
+so the hook, CI, and `bb sample-report` all use it.
+
 Vale styles live in `.config/vale/` (the `StylesPath`). The directory
 holds a copy of the Google style from errata-ai/Google v0.7.1. To update
 it, copy a newer release over `.config/vale/Google/`. Add project jargon

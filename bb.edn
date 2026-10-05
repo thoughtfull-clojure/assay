@@ -15,7 +15,9 @@
  {assay
   {:doc "Run assay: bb assay [options]"
    :requires ([systems.thoughtfull.assay.cli.main :as main])
-   :task (apply main/-main *command-line-args*)}
+   ;; This repo keeps its config in .config/; assay's default is assay.edn.
+   :task (apply main/-main "--config" ".config/assay.edn"
+           *command-line-args*)}
 
   sample-report
   {:doc "Regenerate docs/sample-report.html from this workspace"

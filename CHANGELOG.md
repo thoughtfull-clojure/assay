@@ -7,6 +7,11 @@ and assay follows [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Changed
+
+- The default config file is `assay.edn` at the workspace root, not
+  `.config/assay.edn`. Pass `--config` to use another location.
+
 ## [0.1.0] - 2026-10-04
 
 ### Added

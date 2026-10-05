@@ -1,4 +1,6 @@
-;; assay configuration for this workspace. See README.md.
+;; assay configuration for this workspace, passed with --config by the bb
+;; assay task and the :run alias. assay's default is assay.edn at the root.
+;; See README.md.
 {;; Rules for each brick's and each function's metrics, merged over the
  ;; defaults. A metric listed here replaces all of its default rules; []
  ;; disables them.

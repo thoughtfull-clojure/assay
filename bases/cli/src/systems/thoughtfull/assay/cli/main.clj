@@ -21,7 +21,7 @@
   [["-w" "--workspace DIR" "Polylith workspace root"
     :default "."]
    ["-c" "--config FILE"
-    "Config file (default: .config/assay.edn in the workspace, if present)"]
+    "Config file (default: assay.edn in the workspace, if present)"]
    ["-b" "--base REF"
     (str "Compare with the merge-base of REF and HEAD, such as origin/main,"
       " and fail only on new violations")]
@@ -56,7 +56,7 @@
   [workspace-dir config]
   (let [f (if config
             (io/file config)
-            (io/file workspace-dir ".config" "assay.edn"))]
+            (io/file workspace-dir "assay.edn"))]
     (cond
       (.exists f) (edn/read-string (slurp f))
       config (throw (ex-info (str "Config file not found: " config) {}))

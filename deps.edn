@@ -44,4 +44,5 @@
 
   ;; clojure -M:dev:run [options]
   :run
-  {:main-opts ["-m" "systems.thoughtfull.assay.cli.main"]}}}
+  {:main-opts ["-m" "systems.thoughtfull.assay.cli.main"
+               "--config" ".config/assay.edn"]}}}

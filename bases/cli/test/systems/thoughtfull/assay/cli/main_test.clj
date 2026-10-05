@@ -38,7 +38,7 @@
 (deftest github-test
   (let [root (workspace)
         summary (io/file root "summary.md")]
-    (doto (io/file root ".config/assay.edn")
+    (doto (io/file root "assay.edn")
       (io/make-parents)
       (spit "{:function-thresholds {:complexity [{:rule :max :value 2}]}}"))
     (testing "defaults to github format in GitHub Actions"
@@ -75,7 +75,7 @@
 (deftest base-test
   (let [root (workspace)
         config "{:function-thresholds {:complexity [{:rule :max :value 2}]}}"]
-    (doto (io/file root ".config/assay.edn")
+    (doto (io/file root "assay.edn")
       (io/make-parents)
       (spit config))
     (sh! root "git" "init" "-q" "-b" "main")
@@ -98,7 +98,7 @@
 
 (defn- configure
   [root config]
-  (doto (io/file root ".config/assay.edn")
+  (doto (io/file root "assay.edn")
     (io/make-parents)
     (spit config)))
 
@@ -122,3 +122,19 @@
       "{:function-thresholds {:complexity [{:rule :max :value 2}]}}")
     (is (= 1 (first (run ["-w" (str root) "-f" "text" "--fail-on" "new"] {})))
       "without a base, every violation is new")))
+
+(deftest config-location-test
+  (let [root (workspace)]
+    (testing "assay.edn at the workspace root is the default"
+      (spit (io/file root "assay.edn")
+        "{:function-thresholds {:complexity [{:rule :max :value 2}]}}")
+      (is (= 1 (first (run ["-w" (str root) "-f" "text"] {})))))
+    (testing ".config/assay.edn is not read unless passed with --config"
+      (.delete (io/file root "assay.edn"))
+      (doto (io/file root ".config/assay.edn")
+        (io/make-parents)
+        (spit "{:function-thresholds {:complexity [{:rule :max :value 2}]}}"))
+      (is (= 0 (first (run ["-w" (str root) "-f" "text"] {}))))
+      (is (= 1 (first (run ["-w" (str root) "-f" "text"
+                            "-c" (str (io/file root ".config/assay.edn"))]
+                        {})))))))

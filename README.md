@@ -147,7 +147,7 @@ request is not blocked by problems it didn't introduce. Use
 
 ## Configuration
 
-Assay reads `.config/assay.edn` in the workspace, or the file you pass to
+Assay reads `assay.edn` at the workspace root, or the file you pass to
 `--config`. Every key is optional and merges over the defaults:
 
 ```clojure
