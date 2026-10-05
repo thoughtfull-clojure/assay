@@ -17,6 +17,11 @@
    :requires ([systems.thoughtfull.assay.cli.main :as main])
    :task (apply main/-main *command-line-args*)}
 
+  sample-report
+  {:doc "Regenerate docs/sample-report.html from this workspace"
+   :task (shell (str "bb assay --format html --warnings --no-fail"
+                  " --output docs/sample-report.html"))}
+
   test
   {:doc "Run every brick's tests under babashka"
    :extra-paths ["components/workspace/test"

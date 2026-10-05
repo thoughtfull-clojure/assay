@@ -6,12 +6,16 @@ docstrings
 (?i)assay
 (?i)babashka
 (?i)claude
+(?i)clojars
 (?i)connascence
 (?i)cyclomatic
 kaocha
 namespace
 namespaces
 Polylith
+prek
+README's
 technosophist
 Tonsky
 vendored
+workspace's

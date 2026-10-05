@@ -58,6 +58,8 @@ lint                            # lint (clj-kondo)
 fmt                             # format (cljfmt)
 bb assay --format text          # run assay on itself
 devenv test                     # poly check, tests, and all Git hooks
+bb sample-report                # regenerate docs/sample-report.html
+clojure -T:build jar            # build the Clojars jar (see build.clj)
 ```
 
 ## Git hooks
@@ -106,3 +108,12 @@ holds a copy of the Google style from errata-ai/Google v0.7.1. To update
 it, copy a newer release over `.config/vale/Google/`. Add project jargon
 that fails the spelling check to
 `.config/vale/config/vocabularies/Assay/accept.txt`.
+
+## Packaging
+
+`build.clj` builds the `systems.thoughtfull/assay` jar from
+`projects/assay`, putting every brick's source into it. When a brick
+gains a library dependency, check that `clojure -T:build jar` lists it in
+the jar's POM. The README's Releasing section has the release steps.
+`docs/setup.md` documents using assay from another workspace; keep its
+examples in step with the CLI and the CI workflow.

@@ -5,6 +5,11 @@ workspace and checks the results against thresholds. It reports as an HTML
 page, as GitHub Actions annotations and a job summary, or as plain text for
 a Git hook.
 
+To add assay to a workspace as a command, a Git hook, and a GitHub Actions
+job, see [Setting up assay](docs/setup.md). The
+[sample report](docs/sample-report.html) is assay's report on itself;
+download it and open it in a browser to view it.
+
 ## Metrics
 
 Assay measures each component and base from the Clojure files under its
@@ -239,9 +244,25 @@ lint        # lint (clj-kondo)
 fmt         # format (cljfmt)
 assay       # run assay on itself under the JVM
 devenv test # poly check, tests, and every Git hook
+bb sample-report # regenerate docs/sample-report.html
 ```
 
 Tool configuration lives in `.config/`.
+
+### Releasing
+
+Assay publishes to Clojars as `systems.thoughtfull/assay`, built from the
+`projects/assay` project. `build.edn` holds the version, and
+`build.clj` puts every brick's source into one jar.
+
+1. Set the version in `build.edn`, and move the `Unreleased` entries in
+   `CHANGELOG.md` under a heading for that version and date.
+2. Update the `:mvn/version` in `docs/setup.md`.
+3. Run `clojure -T:build jar` and check the jar, or `clojure -T:build
+   install` to try it from `~/.m2`.
+4. Commit, tag the commit `v<version>`, and push both.
+5. Run `clojure -T:build deploy`. It reads Clojars credentials from
+   `~/.clojars.edn`: `{:username "..." :password "<deploy token>"}`.
 
 ## License
 

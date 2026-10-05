@@ -31,6 +31,12 @@
    :extra-deps {lambdaisland/kaocha {:mvn/version "1.91.1392"}}
    :main-opts ["-m" "kaocha.runner"]}
 
+  ;; clojure -T:build jar | install | deploy (see build.clj)
+  :build
+  {:deps {io.github.clojure/tools.build {:mvn/version "0.10.8"}
+          slipset/deps-deploy {:mvn/version "0.2.1"}}
+   :ns-default build}
+
   ;; clojure -M:poly check (devenv also provides poly on the PATH)
   :poly
   {:extra-deps {polylith/clj-poly {:mvn/version "0.3.32"}}
