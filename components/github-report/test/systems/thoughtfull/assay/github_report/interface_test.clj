@@ -7,11 +7,11 @@
 (def ^:private report
   {:workspace "ws"
    :bricks [{:brick {:name "a" :type :component}
-             :metrics {:max-function-complexity 12 :forms 40}}
+             :metrics {:mean-function-complexity 12 :forms 40}}
             {:brick {:name "b" :type :base}
-             :metrics {:max-function-complexity 2 :forms 300}}]
+             :metrics {:mean-function-complexity 2 :forms 300}}]
    :violations [{:brick {:name "a" :type :component}
-                 :metric :max-function-complexity
+                 :metric :mean-function-complexity
                  :level :error
                  :message "12 is above the maximum of 10"
                  :location {:file "components/a/src/a.clj" :line 7
@@ -23,8 +23,8 @@
 
 (deftest annotations-test
   (is (= [(str "::error file=components/a/src/a.clj,line=7,"
-            "title=component a%3A Max function complexity::"
-            "Max function complexity 12 is above the maximum of 10 (f)")
+            "title=component a%3A Mean function complexity::"
+            "Mean function complexity 12 is above the maximum of 10 (f)")
           (str "::warning title=base b%3A Forms::"
             "Forms 300 is 50%25%0Ahigh")]
         (github-report/annotations report))))
@@ -32,8 +32,8 @@
 (deftest summary-test
   (let [summary (github-report/summary report)]
     (is (str/starts-with? summary "## Assay: ws\n\n2 bricks, 1 errors, 1 warnings."))
-    (is (str/includes? summary "| ❌ error | component a | Max function complexity |"))
-    (is (str/includes? summary "**– / 12** ❌"))
+    (is (str/includes? summary "| ❌ error | component a | Mean function complexity |"))
+    (is (str/includes? summary "**12.0** ❌"))
     (is (str/includes? summary "**300** ⚠️"))))
 
 (def ^:private compared
@@ -43,7 +43,7 @@
     (assoc :comparison {:base-ref "origin/main"
                         :base-rev "0123456789abcdef"
                         :changed-bricks #{"a"}
-                        :base-metrics {"a" {:max-function-complexity 4
+                        :base-metrics {"a" {:mean-function-complexity 4
                                             :forms 40}}
                         :resolved []})))
 
@@ -59,7 +59,7 @@
           (str "2 bricks, 1 new errors, 0 new warnings. Compared with"
             " `origin/main` (merge-base `0123456789ab`), 1 bricks changed.")))
     (is (str/includes? summary "### Changed bricks"))
-    (is (str/includes? summary "4 → 12 (+8)"))
+    (is (str/includes? summary "4.0 → 12.0 (+8.0)"))
     (is (not (str/includes? summary "**300**"))
       "existing violations are not highlighted")
     (is (str/includes? summary "300 is 50%<br>high"))))
@@ -71,8 +71,20 @@
                                  :hidden-warnings 5))
         "2 bricks, 1 errors, 5 warnings hidden (`--warnings` to show).")))
 
-(deftest total-row-test
-  (is (str/includes? (github-report/summary report) "| **Total** |")))
+(deftest outlier-test
+  (let [summary (github-report/summary
+                  (assoc report
+                    :violations []
+                    :bricks (for [[i forms] (map-indexed vector
+                                              [10 10 10 10 10 10 10 10 10 100])]
+                              {:brick {:name (str "b" i) :type :component}
+                               :metrics {:forms forms}})))]
+    (is (str/includes? summary "| **100** |"))
+    (is (= 1 (count (re-seq #"\*\*\d+\*\*" summary))))
+    (is (str/includes? summary "Bold: 2 or more standard deviations"))))
+
+(deftest average-row-test
+  (is (str/includes? (github-report/summary report) "| **Average** |")))
 
 (deftest sections-test
   (let [summary (github-report/summary
@@ -89,16 +101,10 @@
                        :message "12 is above the maximum of 10"})
                     (assoc :edges [{:from "a" :to "b"}])))
         sections (map second (re-seq #"(?m)^### (.*)$" summary))]
-    (is (= ["Violations" "Functions to review" "Brick dependencies" "Bricks summary"] sections))
-    (is (str/includes? summary
-          "| `f` | a | **12** ❌ | 3 | 40 | 1 | `components/a/src/a.clj:7` |")
-      "the function's offending value is highlighted")
+    (is (= ["Violations" "Brick dependencies" "Bricks summary"] sections))
     (is (str/includes? summary "```mermaid\ngraph TD\n  b0[\"a\"]"))
-    (is (= 2 (count (re-seq #"<details><summary>What these metrics mean" summary)))
-      "a legend after the bricks and after the functions")
-    (is (str/includes? summary "</details>\n\n### Brick dependencies")
-      "the functions legend closes before the dependencies section")
-    (is (str/includes? summary "| Parameters | Positional parameters"))))
+    (is (= 1 (count (re-seq #"<details><summary>What these metrics mean" summary)))
+      "a legend after the bricks")))
 
 (deftest brick-annotation-test
   (is (= [(str "::warning file=components/a/deps.edn,line=1,"
@@ -113,7 +119,7 @@
     "a violation of a whole brick is anchored to the brick's deps.edn"))
 
 (deftest comparison-section-order-test
-  (is (= ["Violations" "Resolved" "Functions to review" "Brick dependencies" "Changed bricks"
+  (is (= ["Violations" "Resolved" "Brick dependencies" "Changed bricks"
           "Bricks summary"]
         (map second (re-seq #"(?m)^### (.*)$"
                       (github-report/summary

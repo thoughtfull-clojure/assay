@@ -44,8 +44,11 @@ add nothing.
 | Files | Clojure source files |
 | Forms | Forms in all files |
 | Functions | Function definitions |
-| Function complexity | Mean / max complexity of the brick's functions |
-| Max nesting depth | Deepest nesting in any top-level form |
+| Mean function complexity | Mean complexity of the brick's functions |
+| Mean nesting depth | Mean nesting depth of the brick's functions |
+
+The function rules catch the worst functions, so brick metrics describe
+the brick as a whole.
 
 ### Dependencies
 
@@ -54,7 +57,7 @@ brick depends on an interface, and so on every component that implements
 it.
 
 Both reports draw the graph with Mermaid. Red edges depend on a less
-stable brick or form a cycle, and with `--base`, dashed edges are new.
+stable brick, and with `--base`, dashed edges are new.
 The HTML report loads Mermaid from a CDN; offline, it shows the same
 dependencies as a table.
 
@@ -127,8 +130,12 @@ than once to write several formats.
 Reports list only error-level violations unless you pass `--warnings`,
 and count the warnings they leave out. Warnings point to code worth
 refactoring before it reaches an error, but they never fail a run. The
-HTML and GitHub reports always include the metrics table, with a total
-row across all bricks.
+HTML and GitHub reports always include the metrics table, with a row of
+averages across all bricks. The table marks each value 2 or more standard
+deviations from the mean of all bricks: the HTML report outlines it, and
+the GitHub report sets it in bold. Afferent coupling, instability,
+abstractness, and unused interface compare components only, since a base
+has no interface and no dependents.
 
 Assay exits with status 1 when a brick or function exceeds an error-level
 threshold, and with status 2 for usage errors.
@@ -164,7 +171,6 @@ Assay reads `assay.edn` at the workspace root, or the file you pass to
                     :abstractness [{:rule :min :value 0.5 :level :warning
                                     :types #{:component}}]}
  :dependency-rules {:stable-dependencies :error
-                    :cycles :error
                     :new-dependencies :warning
                     :unused-interface :warning
                     :connascence-of-position {:max 3 :level :warning}
@@ -195,7 +201,6 @@ Dependency rules set a level, or `nil` to turn a check off:
 
 - `:stable-dependencies`: a brick depends on a less stable brick, which
   breaks the Stable Dependencies Principle.
-- `:cycles`: two or more bricks depend on each other in a loop.
 - `:new-dependencies`: with `--base`, a dependency between bricks that the
   base didn't have.
 - `:unused-interface`: an interface definition that no other brick refers

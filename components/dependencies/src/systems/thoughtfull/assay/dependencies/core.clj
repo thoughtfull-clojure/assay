@@ -7,7 +7,6 @@
 
 (def default-rules
   {:stable-dependencies :error
-   :cycles :error
    :new-dependencies :warning
    :unused-interface :warning
    :connascence-of-position {:max 3 :level :warning}
@@ -129,70 +128,6 @@
                   "), which is less stable than " from " ("
                   (fmt i-from) ")")})))
 
-(defn- strongly-connected
-  "Strongly connected components of a graph (node to successors) with more
-  than one node, by Tarjan's algorithm."
-  [graph]
-  (let [state (atom {:index 0 :stack [] :on-stack #{} :indices {} :low {}
-                     :components []})]
-    (letfn [(connect [v]
-              (swap! state #(-> %
-                              (assoc-in [:indices v] (:index %))
-                              (assoc-in [:low v] (:index %))
-                              (update :index inc)
-                              (update :stack conj v)
-                              (update :on-stack conj v)))
-              (doseq [w (graph v)]
-                (cond
-                  (not (contains? (:indices @state) w))
-                  (do (connect w)
-                    (swap! state update-in [:low v] min
-                      (get-in @state [:low w])))
-                  ((:on-stack @state) w)
-                  (swap! state update-in [:low v] min
-                    (get-in @state [:indices w]))))
-              (when (= (get-in @state [:low v]) (get-in @state [:indices v]))
-                (pop-component v)))
-            (pop-component [v]
-              (loop [component []]
-                (let [w (peek (:stack @state))]
-                  (swap! state #(-> %
-                                  (update :stack pop)
-                                  (update :on-stack disj w)))
-                  (if (= w v)
-                    (when (< 1 (count (conj component w)))
-                      (swap! state update :components conj
-                        (vec (sort (conj component w)))))
-                    (recur (conj component w))))))]
-      (doseq [v (sort (keys graph))
-              :when (not (contains? (:indices @state) v))]
-        (connect v))
-      (:components @state))))
-
-(defn- cycle-violations
-  [level {:keys [bricks edges]}]
-  (let [index (brick-index bricks)
-        graph (reduce (fn [g {:keys [from to]}]
-                        (update g from (fnil conj #{}) to))
-                (zipmap (keys index) (repeat #{}))
-                edges)]
-    (for [component (strongly-connected graph)
-          brick-name component
-          :let [cycle-text (str/join ", " component)
-                location (:location (first (filter #(and (= brick-name (:from %))
-                                                      (some #{(:to %)} component))
-                                             edges)))]]
-      (cond-> {:scope :dependency
-               :brick (get-in index [brick-name :brick])
-               :metric :dependency-cycle
-               :label "Dependency cycle"
-               :subject cycle-text
-               :value (count component)
-               :level level
-               :rule {:rule :cycles}
-               :message (str "is in a dependency cycle with " cycle-text)}
-        location (assoc :location location)))))
-
 (defn- unused-interface-violations
   [level {:keys [unused-interface]}]
   (for [{:keys [brick name file line]} unused-interface]
@@ -243,14 +178,12 @@
 
 (defn check
   [rules {:keys [workspace bricks used] :as analysis}]
-  (let [{:keys [stable-dependencies cycles unused-interface
+  (let [{:keys [stable-dependencies unused-interface
                 connascence-of-position duplicate-code
                 merge-candidates]} rules]
     (vec (concat
            (when stable-dependencies
              (stable-dependency-violations stable-dependencies analysis))
-           (when cycles
-             (cycle-violations cycles analysis))
            (when unused-interface
              (unused-interface-violations unused-interface analysis))
            (when (level connascence-of-position)
@@ -275,18 +208,12 @@
 ;; Graph
 
 (defn- problem-edges
-  "Edges to draw in red: stable-dependency violations and cycles, as
-  [from to] pairs."
+  "Edges to draw in red, from stable-dependency violations, as [from to]
+  pairs."
   [violations]
   (into #{}
-    (mapcat (fn [{:keys [metric brick subject]}]
-              (case metric
-                :stable-dependencies [[(:name brick) subject]]
-                :dependency-cycle (let [members (set (str/split subject #", "))]
-                                    (for [to members
-                                          :when (not= to (:name brick))]
-                                      [(:name brick) to]))
-                nil)))
+    (comp (filter #(= :stable-dependencies (:metric %)))
+      (map (juxt (comp :name :brick) :subject)))
     violations))
 
 (defn- node

@@ -20,17 +20,14 @@
   (testing "top-level forms"
     (is (= 2 (:top-level-forms (measure "(ns foo)\n#_(x)\n(def y 1)"))))))
 
-(deftest nesting-depth-test
-  (is (= 0 (:max-nesting-depth (measure ""))))
-  (is (= {:max-nesting-depth 3
-          :max-nesting-location {:file "f.clj" :line 2}}
-        (select-keys (measure "(a)\n(b [c {:d 1}])")
-          [:max-nesting-depth :max-nesting-location])))
-  (is (= 1 (:max-nesting-depth (measure "[]")))))
-
 (defn- depth
+  "The nesting depth of a function, or of source wrapped in (defn t [] ...),
+  which adds 1 to the body."
   [source]
-  (:max-nesting-depth (measure source)))
+  (-> (if (re-find #"^\((defn|defmethod) " source)
+        source
+        (str "(defn t [] " source ")"))
+    measure :functions first :depth))
 
 (deftest binding-nesting-depth-test
   (testing "the body nests inside the let"
@@ -40,7 +37,7 @@
     ;; (f (g (h x))) is 3 deep on its own; defn and let don't add to it
     (is (= 3 (depth "(defn f [] (let [x (f (g (h 1)))] x))")))
     (is (= 3 (depth "(let [{:keys [a]} (f (g (h 1)))] a)")))
-    (is (= 1 (depth "(let [[a [b [c]]] x] a)"))
+    (is (= 2 (depth "(let [[a [b [c]]] x] a)"))
       "destructuring adds nothing"))
   (testing "other binding forms"
     (is (= 3 (depth "(loop [x (f (g (h 1)))] (recur x))")))
@@ -49,12 +46,12 @@
     (is (= 3 (depth "(letfn [(f [x] (g (h x)))] (f 1))"))
       "letfn functions start again"))
   (testing "a let without a binding vector nests normally"
-    (is (= 2 (depth "(let x (f))")))))
+    (is (= 3 (depth "(let x (f))")))))
 
 (deftest params-nesting-depth-test
   (testing "parameter vectors add nothing"
     (is (= 1 (depth "(defn f [{:keys [a] :or {a 1}}] a)")))
-    (is (= 1 (depth "(fn [[a [b]]] a)")))
+    (is (= 2 (depth "(fn [[a [b]]] a)")))
     (is (= 1 (depth "(defn f \"doc\" {:m 1} [[a]] a)"))))
   (testing "vectors in the body still count"
     (is (= 3 (depth "(defn f [x] [x [x]])"))))
@@ -63,20 +60,7 @@
   (testing "defmethod skips its dispatch value, then its parameters"
     (is (= 2 (depth "(defmethod m [:a :b] [[x]] (g x))"))))
   (testing "letfn functions skip their parameters"
-    (is (= 1 (depth "(letfn [(f [{:keys [a]}] a)] 1)")))))
-
-(deftest nesting-location-test
-  (testing "points to the deepest form and names its function"
-    (is (= {:file "f.clj" :line 3 :name "f"}
-          (:max-nesting-location
-           (measure "(defn f [x]\n  (let [y 1]\n    (g (h x))))\n(def z [1])")))))
-  (testing "binding values that restart can still be the deepest"
-    (is (= {:file "f.clj" :line 2 :name "f"}
-          (:max-nesting-location
-           (measure "(defn f []\n  (let [y (a (b (c (d 1))))]\n    y))")))))
-  (testing "no name outside a function"
-    (is (= {:file "f.clj" :line 1}
-          (:max-nesting-location (measure "(def x [[1]])"))))))
+    (is (= 2 (depth "(letfn [(f [{:keys [a]}] a)] 1)")))))
 
 (deftest functions-test
   (is (= [{:name "f" :file "f.clj" :line 2 :complexity 1}
@@ -98,6 +82,9 @@
               (select-keys [:depth :depth-line :forms :params])))]
     (is (= {:depth 3 :depth-line 3 :forms 10 :params 1}
           (f "(defn f\n  [x]\n  (g (h x)))")))
+    (testing "a binding value that restarts can still be the deepest"
+      (is (= 2 (:depth-line
+                (f "(defn f []\n  (let [y (a (b (c (d 1))))]\n    y))")))))
     (testing "params counts the widest arity, without varargs"
       (is (= 3 (:params (f "(defn f ([a] a) ([a b c & more] a))")))))
     (testing "defmethod params skip the dispatch value"
@@ -148,12 +135,7 @@
                       :forms 22
                       :functions 2
                       :mean-function-complexity 2.0
-                      :max-function-complexity 3
-                      :max-nesting-depth 3}
-            :locations {:max-function-complexity
-                        {:file file :line 3 :name "branchy"}
-                        :max-nesting-depth {:file file :line 3
-                                            :name "branchy"}}
+                      :mean-function-depth 2.0}
             :sources [{:file file :ns (quote c) :requires [] :forms 22
                        :definitions [{:name (quote simple) :line 2
                                       :references #{(quote x)}}
@@ -165,38 +147,81 @@
             (update :sources (partial mapv #(dissoc % :keywords :fragments))))))))
 
 (deftest columns-test
-  (is (= ["Files" "Forms" "Functions" "Function complexity"]
-        (map :label (take 4 metrics/columns))))
-  (is (= "2.5 / 11"
+  (is (= ["Files" "Forms" "Functions" "Mean function complexity"
+          "Mean nesting depth"]
+        (map :label (take 5 metrics/columns))))
+  (is (= "2.5"
         (metrics/column-text (nth metrics/columns 3)
-          {:mean-function-complexity 2.46 :max-function-complexity 11})))
+          {:mean-function-complexity 2.46})))
   (is (= "0.33" (metrics/format-value :instability 1/3)))
   (is (= "–" (metrics/format-value :instability nil))))
 
-(deftest totals-test
-  (is (= {:files 3
-          :forms 30
-          :functions 4
-          :mean-function-complexity 3.0
-          :max-function-complexity 6
-          :max-nesting-depth 5
+(deftest averages-test
+  (is (= {:files 1.5
+          :forms 15.0
+          :functions 2.0
+          :mean-function-complexity 4.0
+          :mean-function-depth 3.0
+          :afferent 1.0
+          :efferent nil
           :instability 0.5
           :abstractness nil
           :cohesion nil
           :clusters nil
-          :unused-interface 0}
-        (metrics/totals
-          [{:metrics {:files 1 :forms 10 :functions 1
+          :unused-interface nil
+          :shared-keywords nil}
+        (metrics/averages
+          [{:brick {:type :component}
+            :metrics {:files 1 :forms 10 :functions 1
                       :mean-function-complexity 6.0
-                      :max-function-complexity 6 :max-nesting-depth 5
+                      :mean-function-depth 4.0
                       :instability 0.25}
-            :functions [{:complexity 6}]}
-           {:metrics {:files 2 :forms 20 :functions 3
+            :functions [{:complexity 6 :depth 4}]}
+           {:brick {:type :component}
+            :metrics {:files 2 :forms 20 :functions 3
                       :mean-function-complexity 2.0
-                      :max-function-complexity 3 :max-nesting-depth 2
+                      :mean-function-depth 2.0
                       :instability 0.75 :afferent 1}
-            :functions [{:complexity 1} {:complexity 2} {:complexity 3}]}]))
-    "the mean complexity is over all functions, not a mean of brick means"))
+            :functions [{:complexity 1 :depth 2} {:complexity 2 :depth 2}
+                        {:complexity 3 :depth 2}]}]))
+    "the mean of each brick's value, skipping bricks without one")
+  (is (= "1.5" (metrics/format-value :files 1.5)))
+  (is (= "2" (metrics/format-value :files 2.0))))
+
+(deftest outliers-test
+  (let [bricks (fn [& forms]
+                 (map-indexed (fn [i n]
+                                {:brick {:name (str "b" i)}
+                                 :metrics {:forms n :abstractness nil}})
+                   forms))]
+    (testing "values at least k standard deviations from the mean, either way"
+      (let [o (metrics/outliers (bricks 10 10 10 10 10 10 10 10 10 100) 2)]
+        (is (= [["b9" :forms]] (keys o)))
+        (is (= 3.0 (:z (o ["b9" :forms]))))
+        (is (= 19.0 (:mean (o ["b9" :forms])))))
+      (is (= [["b9" :forms]]
+            (keys (metrics/outliers (bricks 100 100 100 100 100 100 100 100
+                                      100 10)
+                    2)))))
+    (testing "no outliers without variation or with too few values"
+      (is (empty? (metrics/outliers (bricks 5 5 5 5) 2)))
+      (is (empty? (metrics/outliers (bricks 1 100) 0.5))))
+    (testing "bases don't count for metrics that only describe components"
+      (let [measurements (concat
+                           (for [i (range 9)]
+                             {:brick {:name (str "c" i) :type :component}
+                              :metrics {:abstractness 0.9 :forms 10}})
+                           [{:brick {:name "c9" :type :component}
+                             :metrics {:abstractness 0.8 :forms 10}}
+                            {:brick {:name "base" :type :base}
+                             :metrics {:abstractness 0.0 :forms 100}}])
+            o (metrics/outliers measurements 2)]
+        (is (= #{["c9" :abstractness] ["base" :forms]} (set (keys o))))
+        (is (= :components (:peers (o ["c9" :abstractness]))))
+        (is (= :bricks (:peers (o ["base" :forms]))))
+        (is (= 0.89 (Double/parseDouble
+                      (format "%.2f" (:abstractness (metrics/averages
+                                                      measurements))))))))))
 
 (deftest definitions-test
   (is (= [{:name 'labels :line 1 :references #{'metrics/metrics 'into}}
@@ -231,19 +256,3 @@
   (is (= "Parameters" (metrics/label {:scope :function :metric :params})))
   (is (= "Custom" (metrics/label {:metric :forms :label "Custom"})))
   (is (= "mystery" (metrics/label {:metric :mystery}))))
-
-(deftest notable-functions-test
-  (let [measurements [{:brick {:name "a"}
-                       :functions [{:name "simple" :complexity 1}
-                                   {:name "flagged" :complexity 2}
-                                   {:name "complex" :complexity 9}]}
-                      {:brick {:name "b"}
-                       :functions [{:name "medium" :complexity 5}]}]
-        flagged? #(= "flagged" (:name %))]
-    (is (= ["flagged" "complex" "medium"]
-          (map :name (metrics/notable-functions measurements flagged? 3))))
-    (is (= "a" (:name (:brick (first (metrics/notable-functions
-                                       measurements flagged? 3))))))
-    (is (= ["flagged"]
-          (map :name (metrics/notable-functions measurements flagged? 0)))
-      "every flagged function, even beyond n")))

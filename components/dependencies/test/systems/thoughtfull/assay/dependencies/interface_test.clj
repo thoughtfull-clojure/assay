@@ -80,8 +80,7 @@
           (m "lonely")))))
 
 (deftest check-test
-  (let [;; b now requires c, so a -> b -> c -> a and b <-> c are cycles, and
-        ;; b (stable) depends on c (less stable)
+  (let [;; b now requires c, so b (stable) depends on c (less stable)
         bricks (assoc-in acyclic [1 :sources 1 :requires]
                  [{:ns 't.c.interface :line 9}])
         analysis (dependencies/analyze workspace bricks)
@@ -93,17 +92,12 @@
               (:stable-dependencies by-metric))))
       (is (re-find #"depends on c \(instability 0\.5\), which is less stable than b \(0\.33\)"
             (:message (first (:stable-dependencies by-metric))))))
-    (testing "cycles, reported for each brick in one"
-      (is (= #{"a" "b" "c"}
-            (set (map (comp :name :brick) (:dependency-cycle by-metric)))))
-      (is (= #{"a, b, c"} (set (map :subject (:dependency-cycle by-metric))))))
     (testing "rules can be turned off or downgraded"
-      (is (empty? (dependencies/check {:stable-dependencies nil :cycles nil
-                                       :unused-interface nil}
+      (is (empty? (dependencies/check {:stable-dependencies nil :unused-interface nil}
                     analysis)))
       (is (every? #(= :warning (:level %))
             (dependencies/check {:stable-dependencies :warning
-                                 :cycles :warning}
+                                 :unused-interface :warning}
               analysis))))))
 
 (deftest merge-candidates-test
@@ -262,6 +256,6 @@
            {:brick {:name "b" :type :component}}]
           [{:from "cli" :to "a"} {:from "a" :to "b"} {:from "b" :to "a"}
            {:from "cli" :to "a"}]
-          [{:metric :dependency-cycle :brick {:name "a"} :subject "a, b"}
-           {:metric :dependency-cycle :brick {:name "b"} :subject "a, b"}
+          [{:metric :stable-dependencies :brick {:name "a"} :subject "b"}
+           {:metric :stable-dependencies :brick {:name "b"} :subject "a"}
            {:metric :new-dependency :brick {:name "a"} :subject "b"}]))))

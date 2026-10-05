@@ -10,7 +10,7 @@
     :message "300 is too many"
     :status :new}
    {:brick {:name "a" :type :component :dir "components/a"}
-    :metric :max-function-complexity
+    :metric :mean-function-complexity
     :level :error
     :message "12 is above the maximum of 10"
     :location {:file "components/a/src/a.clj" :line 7 :name "f"}
@@ -22,7 +22,7 @@
     :status :existing}])
 
 (deftest render-test
-  (is (= (str "error   components/a/src/a.clj:7  Max function complexity 12 is"
+  (is (= (str "error   components/a/src/a.clj:7  Mean function complexity 12 is"
            " above the maximum of 10 (f)\n"
            "warning bases/b  Forms 300 is too many\n"
            "assay: 3 bricks, 1 new error, 1 new warning, compared with HEAD"

@@ -8,33 +8,27 @@
 (def metrics
   [{:key :files
     :label "Files"
-    :description "Clojure source files under src."
-    :total :sum}
+    :description "Clojure source files under src."}
    {:key :forms
     :label "Forms"
-    :description "Forms at any depth, including symbols and literals."
-    :total :sum}
+    :description "Forms at any depth, including symbols and literals."}
    {:key :functions
     :label "Functions"
-    :description "defn, defn-, defmacro, and defmethod forms."
-    :total :sum}
+    :description "defn, defn-, defmacro, and defmethod forms."}
    {:key :mean-function-complexity
     :label "Mean function complexity"
     :description "Mean cyclomatic complexity of the brick's functions."
     :format :decimal
-    :precision 1
-    :total :function-mean}
-   {:key :max-function-complexity
-    :label "Max function complexity"
-    :description "Cyclomatic complexity of the most complex function."
-    :total :max}
-   {:key :max-nesting-depth
-    :label "Max nesting depth"
-    :description "Deepest nesting in any top-level form."
-    :total :max}
+    :precision 1}
+   {:key :mean-function-depth
+    :label "Mean nesting depth"
+    :description "Mean nesting depth of the brick's functions."
+    :format :decimal
+    :precision 1}
    {:key :afferent
     :label "Afferent (Ca)"
-    :description "Bricks that depend on this brick's interface."}
+    :description "Bricks that depend on this brick's interface."
+    :components-only true}
    {:key :efferent
     :label "Efferent (Ce)"
     :description "Interfaces this brick depends on."}
@@ -42,26 +36,24 @@
     :label "Instability"
     :description "Ce / (Ca + Ce): 0 is stable, 1 is unstable."
     :format :decimal
-    :total :mean}
+    :components-only true}
    {:key :abstractness
     :label "Abstractness"
     :description (str "1 - interface definitions / all definitions: how"
                    " much the interface hides. Bases are 0.")
     :format :decimal
-    :total :mean}
+    :components-only true}
    {:key :cohesion
     :label "Cohesion"
     :description "Own-namespace references / all workspace references."
-    :format :decimal
-    :total :mean}
+    :format :decimal}
    {:key :clusters
     :label "Clusters"
-    :description "Groups of implementation definitions that share no references."
-    :total :max}
+    :description "Groups of implementation definitions that share no references."}
    {:key :unused-interface
     :label "Unused interface"
     :description "Interface definitions no other brick uses."
-    :total :sum}
+    :components-only true}
    {:key :shared-keywords
     :label "Shared keywords"
     :description "Keywords this brick uses that other bricks also use."}])
@@ -75,14 +67,13 @@
             " literals. A measure of size that ignores formatting and"
             " comments.")
    :functions "`defn`, `defn-`, `defmacro`, and `defmethod` definitions."
-   :function-complexity
-   (str "The mean and maximum cyclomatic complexity of the brick's"
-     " functions. A rising mean means the brick as a whole is getting"
-     " harder to follow; the maximum points at the function to simplify"
-     " first.")
-   :max-nesting-depth
-   (str "The deepest nesting in any top-level form. See nesting depth"
-     " under functions.")
+   :mean-function-complexity
+   (str "The mean cyclomatic complexity of the brick's functions. A rising"
+     " mean means the brick as a whole is getting harder to follow. The"
+     " function rules catch the most complex functions.")
+   :mean-function-depth
+   (str "The mean nesting depth of the brick's functions. See nesting"
+     " depth under functions.")
    :afferent
    (str "How many bricks depend on this brick's interface. A high count"
      " means a change here ripples widely, so the interface should change"
@@ -119,46 +110,16 @@
      " one means changing every brick that shares it. Keywords that are"
      " Clojure syntax, such as `:as` and `:keys`, don't count.")})
 
-(def ^:private function-explanations
-  {:complexity
-   (str "Cyclomatic complexity: `1` plus each decision point (`if`, `when`,"
-     " each `cond` or `case` clause, each extra argument to `and` or `or`,"
-     " each `catch`, each extra arity). Roughly the number of paths through"
-     " the function to understand and test.")
-   :depth
-   (str "The deepest nesting of collections in the body. Binding values in"
-     " `let`, `loop`, `for`, and similar forms start again at `1`, and"
-     " parameters, destructuring, and docstrings don't count. Deep nesting"
-     " usually means a function that should be split.")
-   :forms
-   (str "Every form in the function: its size. Long functions are harder"
-     " to name, test, and reuse.")
-   :params
-   (str "Positional parameters of the widest arity, not counting `& more`."
-     " Callers must pass them in order, which couples them to the"
-     " signature; consider a map for many parameters.")})
-
 (def ^:private metric-index
   (into {} (map (juxt :key identity)) metrics))
 
 (def columns
-  (let [combined #{:mean-function-complexity :max-function-complexity}]
-    (vec
-      (mapcat (fn [{:keys [key label description]}]
-                (cond
-                  (= :mean-function-complexity key)
-                  [{:label "Function complexity"
-                    :description (str "Mean / max cyclomatic complexity of"
-                                   " the brick's functions.")
-                    :explanation (brick-explanations :function-complexity)
-                    :keys [:mean-function-complexity
-                           :max-function-complexity]}]
-                  (combined key) []
-                  :else [{:label label
-                          :description description
-                          :explanation (brick-explanations key)
-                          :keys [key]}]))
-        metrics))))
+  (mapv (fn [{:keys [key label description]}]
+          {:label label
+           :description description
+           :explanation (brick-explanations key)
+           :keys [key]})
+    metrics))
 
 (defn format-value
   [k v]
@@ -167,7 +128,8 @@
       (nil? v) "–"
       (= :decimal format) (clojure.core/format (str "%." precision "f")
                             (double v))
-      :else (str v))))
+      (== v (Math/rint v)) (str (long v))
+      :else (clojure.core/format "%.1f" (double v)))))
 
 (defn column-text
   [{:keys [keys]} metrics]
@@ -178,33 +140,48 @@
   (when (seq xs)
     (/ (reduce + xs) (double (count xs)))))
 
-(defn totals
+(defn- peers
+  "The measurements a metric compares: components only, when bases' values
+  follow from Polylith's structure (bases have no interface and no
+  dependents)."
+  [{:keys [components-only]} measurements]
+  (if components-only
+    (filter #(= :component (get-in % [:brick :type])) measurements)
+    measurements))
+
+(defn averages
   [measurements]
   (into {}
-    (for [{:keys [key total]} metrics
-          :when total
-          :let [values (keep #(get-in % [:metrics key]) measurements)]]
-      [key (case total
-             :sum (reduce + 0 values)
-             :max (when (seq values) (apply max values))
-             :mean (mean-of values)
-             :function-mean (mean-of (map :complexity
-                                       (mapcat :functions measurements))))])))
+    (for [{:keys [key] :as metric} metrics]
+      [key (mean-of (keep #(get-in % [:metrics key])
+                      (peers metric measurements)))])))
 
-(def function-metrics
-  (mapv #(assoc % :explanation (function-explanations (:key %)))
-    [{:key :complexity
-      :label "Complexity"
-      :description "Cyclomatic complexity."}
-     {:key :depth
-      :label "Nesting depth"
-      :description "Deepest nesting in the function body."}
-     {:key :forms
-      :label "Forms"
-      :description "Forms in the function, including symbols and literals."}
-     {:key :params
-      :label "Parameters"
-      :description "Positional parameters of the widest arity."}]))
+(def outlier-std-devs
+  2)
+
+(defn outliers
+  [measurements k]
+  (into {}
+    (for [{:keys [key components-only] :as metric} metrics
+          :let [values (keep #(when-some [v (get-in % [:metrics key])]
+                                [(get-in % [:brick :name]) v])
+                         (peers metric measurements))]
+          :when (<= 3 (count values))
+          :let [xs (map second values)
+                m (mean-of xs)
+                sd (Math/sqrt (mean-of (map #(Math/pow (- % m) 2) xs)))]
+          :when (pos? sd)
+          [brick-name v] values
+          :let [z (/ (- v m) sd)]
+          :when (<= k (abs z))]
+      [[brick-name key] {:z z :mean m :std-dev sd
+                         :peers (if components-only :components :bricks)}])))
+
+(def ^:private function-metrics
+  [{:key :complexity :label "Complexity"}
+   {:key :depth :label "Nesting depth"}
+   {:key :forms :label "Forms"}
+   {:key :params :label "Parameters"}])
 
 ;; Forms and nesting
 
@@ -502,23 +479,12 @@
   [file source]
   (let [forms (parse/parse-string source)
         info (parse/ns-info forms)
-        top-level (parse/top-level-forms forms)
-        deepest (reduce deeper shallowest
-                  (for [form top-level]
-                    (assoc (deepest-at form 1) :form form)))]
+        top-level (parse/top-level-forms forms)]
     (merge
       (select-keys info [:ns :requires])
       {:file file
        :forms (form-count forms)
        :top-level-forms (count top-level)
-       :max-nesting-depth (:depth deepest)
-       :max-nesting-location (when-let [node (:node deepest)]
-                               (cond-> {:file file
-                                        :line (:row (meta node))}
-                                 (function-heads (parse/head-symbol
-                                                   (:form deepest)))
-                                 (assoc :name
-                                   (function-name (:form deepest)))))
        :functions (->> top-level
                     (filter #(contains? function-heads
                                (parse/head-symbol %)))
@@ -531,11 +497,6 @@
        :keywords (keywords top-level)
        :fragments (fragments top-level)})))
 
-(defn- max-by
-  [k xs]
-  (when (seq xs)
-    (apply max-key k xs)))
-
 (defn- mean
   [xs]
   (when (seq xs)
@@ -545,22 +506,13 @@
   [root brick]
   (let [files (mapv #(measure-source % (slurp (io/file root %)))
                 (:files brick))
-        functions (vec (mapcat :functions files))
-        worst-fn (max-by :complexity functions)
-        deepest (max-by :max-nesting-depth files)]
+        functions (vec (mapcat :functions files))]
     {:brick brick
      :metrics {:files (count files)
                :forms (reduce + (map :forms files))
                :functions (count functions)
                :mean-function-complexity (mean (map :complexity functions))
-               :max-function-complexity (or (:complexity worst-fn) 0)
-               :max-nesting-depth (or (:max-nesting-depth deepest) 0)}
-     :locations (cond-> {}
-                  worst-fn
-                  (assoc :max-function-complexity
-                    (select-keys worst-fn [:file :line :name]))
-                  deepest
-                  (assoc :max-nesting-depth (:max-nesting-location deepest)))
+               :mean-function-depth (mean (map :depth functions))}
      :functions functions
      :sources (mapv #(select-keys % [:file :ns :requires :forms :definitions
                                      :keywords :fragments])
@@ -573,15 +525,6 @@
 (defn label
   [{:keys [scope metric label]}]
   (or label (get-in labels [(or scope :brick) metric]) (name metric)))
-
-(defn notable-functions
-  [measurements flagged? n]
-  (let [functions (mapcat (fn [{:keys [brick functions]}]
-                            (map #(assoc % :brick brick) functions))
-                    measurements)]
-    (->> functions
-      (sort-by (juxt #(if (flagged? %) 0 1) (comp - :complexity) :file :line))
-      (take (max n (count (filter flagged? functions)))))))
 
 (defn function-id
   [{:keys [ns name]}]

@@ -123,23 +123,36 @@ clusters: more than one suggests where to split it. A
 `:max-increase-percent` change threshold catches a brick that grows
 suddenly, often because a feature landed in the wrong place.
 
-### Mean and max function complexity
+### Mean function complexity
 
-Max function complexity points at the brick's worst function, which the
-function rules already report. The mean says more about the brick: a high
-mean means complex code throughout, often because the brick works at too
-low a level or handles many special cases. That can mean its data needs a
-better shape, so that the cases go away rather than move.
+The function rules report the brick's worst functions. The mean says more
+about the brick: a high mean means complex code throughout, often because
+the brick works at too low a level or handles many special cases. That can
+mean its data needs a better shape, so that the cases go away rather than
+move.
 
 The default `:std-devs` warning flags a brick whose mean stands out from
 its peers. A rising mean, which a `:max-increase` change threshold
 catches, shows a brick getting harder to work in over time.
 
-### Max nesting depth
+### Mean nesting depth
 
-This covers every top-level form, not just functions, so it also catches
-deeply nested data and large `def` forms. A deep data literal may be fine.
-Otherwise, treat it as you would a deeply nested function.
+A high mean nesting depth means the brick's functions tend to bury their
+steps in nested expressions, rather than one function doing so. Treat it as
+a habit to change across the brick, as described under nesting depth for
+functions.
+
+### Outliers
+
+The bricks summary marks any value that is 2 or more standard deviations
+from the mean of all bricks, in either direction: the HTML report outlines
+it, and the GitHub report sets it in bold. Afferent coupling, instability,
+abstractness, and unused interface compare components only, since every
+base has no interface and no dependents. A marked value isn't a
+violation. It shows where a brick differs from the rest of the workspace,
+which is worth understanding: a brick much larger than the others, or with
+far more dependents, may be doing more than its
+share.
 
 ## Dependency metrics
 
@@ -213,13 +226,6 @@ or when it isolates a library or a side effect, as assay's `git` component
 does. A component that only a base uses doesn't count. That's the usual
 shape of a Polylith workspace, and moving its code into the base would put
 logic where Polylith says it doesn't belong.
-
-### Cycles
-
-Bricks in a cycle can't change, test, or deploy independently, since each
-depends on the others. Assay treats them as errors by default. To break a
-cycle, extract what the bricks share into a new component, or invert one of
-the dependencies as described under instability.
 
 ### New dependencies
 

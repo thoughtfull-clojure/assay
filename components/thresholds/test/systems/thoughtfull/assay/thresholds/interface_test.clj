@@ -53,14 +53,6 @@
             [(measurement "a" 1) (measurement "b" 1)
              (measurement "c" 1) (measurement "d" 2)])))))
 
-(deftest location-test
-  (is (= {:file "f.clj" :line 3 :name "g"}
-        (:location
-         (first
-           (thresholds/check {:brick-thresholds {:m [{:rule :max :value 1}]}}
-             [(assoc (measurement "a" 5)
-                :locations {:m {:file "f.clj" :line 3 :name "g"}})]))))))
-
 (deftest unknown-rule-test
   (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Unknown threshold rule"
         (thresholds/check {:brick-thresholds {:m [{:rule :median :value 1}]}}

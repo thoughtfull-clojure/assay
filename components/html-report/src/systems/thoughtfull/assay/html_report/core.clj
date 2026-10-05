@@ -39,12 +39,14 @@
   --bg: #fbfbfa; --surface: #ffffff; --text: #1c1d1f; --muted: #5f6368;
   --border: #e3e3e0; --error: #b3261e; --error-bg: #fce8e6;
   --warning: #8a5300; --warning-bg: #fef3d6; --ok: #1e6b3a;
+  --outlier: #5b3cc4;
 }
 @media (prefers-color-scheme: dark) {
   :root {
     --bg: #141517; --surface: #1c1d20; --text: #e8e8e6; --muted: #a0a3a8;
     --border: #2e3034; --error: #f2b8b5; --error-bg: #3c1d1b;
     --warning: #f5cf7a; --warning-bg: #3a2c0c; --ok: #8fd4a6;
+    --outlier: #b9a6f5;
   }
 }
 * { box-sizing: border-box; }
@@ -80,6 +82,7 @@ td:first-child > code, .brick-name, .type { white-space: nowrap; }
 td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 td.error { background: var(--error-bg); color: var(--error); font-weight: 600; }
 td.warning { background: var(--warning-bg); color: var(--warning); font-weight: 600; }
+td.outlier { box-shadow: inset 0 0 0 2px var(--outlier); font-weight: 600; }
 .badge {
   display: inline-block; padding: 1px 8px; border-radius: 999px;
   font-size: 12px; font-weight: 600;
@@ -93,12 +96,17 @@ p.none { color: var(--muted); }
 .badge.new { background: var(--error-bg); color: var(--error); }
 .up { color: var(--error); }
 .down { color: var(--ok); }
-tr.total td { font-weight: 600; border-top: 2px solid var(--border); }
+tr.average td { font-weight: 600; border-top: 2px solid var(--border); }
 details.legend { margin-top: 12px; }
 details.dependency-table .scroll { margin-top: 12px; }
 pre.mermaid { background: none; margin: 0; text-align: center; }
 pre.mermaid:not([data-processed]) { visibility: hidden; height: 0; }
-.graph-key { color: var(--muted); font-size: 13px; margin: 0 0 8px; }
+.graph-key, .table-key { color: var(--muted); font-size: 13px; margin: 0 0 8px; }
+.table-key { margin: 8px 0 0; }
+.outlier-key {
+  display: inline-block; width: 1em; height: 1em; vertical-align: -2px;
+  border-radius: 2px; box-shadow: inset 0 0 0 2px var(--outlier);
+}
 details.legend summary { cursor: pointer; color: var(--muted); font-size: 13px; }
 details.legend dl {
   display: grid; grid-template-columns: max-content 1fr; gap: 6px 16px;
@@ -240,10 +248,31 @@ details.legend dd code {
     (filter #(and (= scope (:scope % :brick)) (introduced? %)) violations)))
 
 (defn- metric-cell
-  [{:keys [level messages]} text]
-  [:td {:class (str "num" (when level (str " " (name level))))
+  [{:keys [level messages outlier?]} text]
+  [:td {:class (str "num" (when level (str " " (name level)))
+                 (when outlier? " outlier"))
         :title (when messages (str/join "\n" messages))}
    text])
+
+(defn- outlier-message
+  [metric {:keys [z mean std-dev peers]}]
+  (str (format "%.1f" (abs z)) " standard deviations "
+    (if (pos? z) "above" "below") " the mean of all " (name peers) " ("
+    (metrics/format-value metric mean) " ± "
+    (metrics/format-value metric std-dev) ")"))
+
+(defn- outlier-flags
+  "A column's flags with any outliers among its metrics added."
+  [flags outliers brick-name {:keys [keys]}]
+  (let [found (keep (fn [k]
+                      (when-let [o (outliers [brick-name k])]
+                        (outlier-message k o)))
+                keys)]
+    (if (seq found)
+      (-> flags
+        (assoc :outlier? true)
+        (update :messages (fnil into []) found))
+      flags)))
 
 (defn- column-flags
   "The flags of a column's metrics combined: the worst level and every
@@ -255,23 +284,27 @@ details.legend dd code {
        :messages (vec (mapcat :messages flags))})))
 
 (defn- metrics-table
-  "The summary table: every brick, then a total row."
+  "The summary table: every brick, then an average row."
   [bricks violations]
   (let [flagged (flagged-cells violations :brick
                   (juxt (comp :name :brick) :metric))
-        totals (metrics/totals bricks)]
+        outliers (metrics/outliers bricks metrics/outlier-std-devs)
+        averages (metrics/averages bricks)]
     (table (cons "Brick" (metric-headers metrics/columns))
       (concat
         (for [{:keys [brick] :as m} bricks]
           (cons (brick-cell brick)
-            (for [column metrics/columns]
-              (metric-cell (column-flags flagged (:name brick) column)
+            (for [column metrics/columns
+                  :let [brick-name (:name brick)]]
+              (metric-cell (outlier-flags
+                             (column-flags flagged brick-name column)
+                             outliers brick-name column)
                 (metrics/column-text column (:metrics m))))))
         [(with-meta
-           (cons "Total"
+           (cons "Average"
              (for [column metrics/columns]
-               (metric-cell nil (metrics/column-text column totals))))
-           {:class "total"})]))))
+               (metric-cell nil (metrics/column-text column averages))))
+           {:class "average"})]))))
 
 (defn- inline-code
   "Text with `backticked` spans rendered as code."
@@ -286,28 +319,6 @@ details.legend dd code {
    [:summary "What these metrics mean"]
    [:dl (for [{:keys [label explanation]} entries]
           (list [:dt label] [:dd (inline-code explanation)]))]])
-
-;; Functions
-
-(defn- functions-table
-  "Functions that break a rule, then the most complex of the rest."
-  [bricks violations n]
-  (let [flagged (flagged-cells violations :function
-                  (juxt (comp :name :brick) :subject :metric))
-        flagged-fns (set (map (comp vec (partial take 2)) (keys flagged)))
-        functions (metrics/notable-functions bricks
-                    #(flagged-fns [(:name (:brick %)) (metrics/function-id %)]) n)]
-    (if (empty? functions)
-      [:p {:class "none"} "No functions found."]
-      (table (concat ["Function" "Brick"]
-               (metric-headers metrics/function-metrics)
-               ["Location"])
-        (for [{:keys [brick] :as f} functions]
-          (concat
-            [[:code (:name f)] (:name brick)]
-            (for [{k :key} metrics/function-metrics]
-              (metric-cell (flagged [(:name brick) (metrics/function-id f) k]) (get f k)))
-            [(location (dissoc f :name))]))))))
 
 ;; Dependencies
 
@@ -346,7 +357,7 @@ import('https://cdn.jsdelivr.net/npm/mermaid@11.17.2/dist/mermaid.esm.min.mjs')
     [:p {:class "none"} "No dependencies between bricks."]
     (list
       [:p {:class "graph-key"}
-       "Red: a dependency on a less stable brick, or a cycle."
+       "Red: a dependency on a less stable brick."
        " Dashed: new since the base."]
       [:pre {:class "mermaid"} (dependencies/mermaid bricks edges violations)]
       [:details {:class "legend dependency-table"}
@@ -384,7 +395,6 @@ import('https://cdn.jsdelivr.net/npm/mermaid@11.17.2/dist/mermaid.esm.min.mjs')
   [rule {:keys [max min-forms max-size]}]
   (case rule
     :stable-dependencies ["Stable dependencies" "only on more stable bricks"]
-    :cycles ["Cycles" "none"]
     :new-dependencies ["New dependencies" "none the base didn't have"]
     :unused-interface ["Unused interface" "none"]
     :connascence-of-position
@@ -463,14 +473,15 @@ import('https://cdn.jsdelivr.net/npm/mermaid@11.17.2/dist/mermaid.esm.min.mjs')
     [:h2 "Violations"]
     (violations-table violations comparison (:hidden-warnings report))
     (resolved-section report)
-    [:h2 "Functions to review"]
-    (functions-table bricks violations 15)
-    (legend metrics/function-metrics)
     [:h2 "Brick dependencies"]
     (dependencies-section report)
     (changed-bricks-section report)
     [:h2 "Bricks summary"]
     (metrics-table bricks violations)
+    [:p {:class "table-key"}
+     [:span {:class "outlier-key"}] " Outlined: " metrics/outlier-std-devs
+     " or more standard deviations from the mean of all bricks (of all"
+     " components, for metrics that only describe components)."]
     (legend metrics/columns)
     (thresholds-section report)))
 

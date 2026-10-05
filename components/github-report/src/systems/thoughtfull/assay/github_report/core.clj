@@ -177,6 +177,7 @@
   (case level
     :error (str "**" text "** ❌")
     :warning (str "**" text "** ⚠️")
+    :outlier (str "**" text "**")
     text))
 
 (defn- legend
@@ -187,13 +188,16 @@
     "\n\n</details>"))
 
 (defn- bricks-section
-  "Every brick, then a total row, and the legend."
+  "Every brick, then an average row, and the legend."
   [{:keys [bricks violations]}]
   (let [flagged (flagged-cells violations)
+        outliers (metrics/outliers bricks metrics/outlier-std-devs)
         column-level (fn [brick-name {:keys [keys]}]
-                       (reduce thresholds/worse-level nil
-                         (map #(flagged [brick-name %]) keys)))
-        totals (metrics/totals bricks)]
+                       (or (reduce thresholds/worse-level nil
+                             (map #(flagged [brick-name %]) keys))
+                         (when (some #(outliers [brick-name %]) keys)
+                           :outlier)))
+        averages (metrics/averages bricks)]
     (str "### Bricks summary\n\n"
       (table (cons "Brick" (map :label metrics/columns))
         (concat
@@ -202,51 +206,20 @@
               (for [column metrics/columns]
                 (metric-cell (column-level (:name brick) column)
                   (metrics/column-text column (:metrics m))))))
-          [(cons "**Total**"
+          [(cons "**Average**"
              (for [column metrics/columns]
-               (metrics/column-text column totals)))]))
+               (metrics/column-text column averages)))]))
+      "\n\nBold: " metrics/outlier-std-devs " or more standard deviations"
+      " from the mean of all bricks (of all components, for metrics that"
+      " only describe components)."
       "\n\n" (legend metrics/columns))))
-
-(defn- flagged-functions
-  "Map of [brick name, function name, metric] to the worst level of the
-  function violations a change introduced (or all, without a comparison)."
-  [violations]
-  (reduce
-    (fn [acc {:keys [brick subject metric level]}]
-      (update acc [(:name brick) subject metric] thresholds/worse-level level))
-    {}
-    (->> violations
-      (filter #(= :function (:scope %)))
-      (remove (comp #{:existing :indirect} :status)))))
-
-(defn- functions-section
-  "Functions that break a rule, then the most complex of the rest, and the
-  legend."
-  [{:keys [bricks violations]} n]
-  (let [flagged (flagged-functions violations)
-        flagged-fns (set (map (comp vec (partial take 2)) (keys flagged)))
-        functions (metrics/notable-functions bricks
-                    #(flagged-fns [(:name (:brick %)) (metrics/function-id %)]) n)]
-    (when (seq functions)
-      (str "### Functions to review\n\n"
-        (table (concat ["Function" "Brick"]
-                 (map :label metrics/function-metrics)
-                 ["Location"])
-          (for [{:keys [brick file line] :as f} functions]
-            (concat
-              [(str "`" (:name f) "`") (:name brick)]
-              (for [{k :key} metrics/function-metrics]
-                (metric-cell (flagged [(:name brick) (metrics/function-id f) k])
-                  (str (get f k))))
-              [(str "`" file ":" line "`")])))
-        "\n\n" (legend metrics/function-metrics)))))
 
 (defn- dependencies-section
   "The brick graph as a Mermaid diagram, which GitHub renders."
   [{:keys [bricks edges violations]}]
   (when (seq edges)
     (str "### Brick dependencies\n\n"
-      "Red: a dependency on a less stable brick, or a cycle. Dashed: new"
+      "Red: a dependency on a less stable brick. Dashed: new"
       " since the base.\n\n"
       "```mermaid\n"
       (dependencies/mermaid bricks edges violations)
@@ -260,7 +233,6 @@
             (headline report)
             (violations-section report)
             (resolved-section report)
-            (functions-section report 15)
             (dependencies-section report)
             (when (:comparison report) (changes-section report))
             (bricks-section report)]))

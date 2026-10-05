@@ -106,15 +106,13 @@
                        (evaluate rule value
                          (peer-values measurements measurement metric)))]
         :when result]
-    (cond-> (merge {:scope :brick
-                    :brick brick
-                    :metric metric
-                    :value value
-                    :rule rule
-                    :level (:level rule :error)}
-              result)
-      (get-in measurement [:locations metric])
-      (assoc :location (get-in measurement [:locations metric])))))
+    (merge {:scope :brick
+            :brick brick
+            :metric metric
+            :value value
+            :rule rule
+            :level (:level rule :error)}
+      result)))
 
 (def ^:private function-rules
   #{:max :min})

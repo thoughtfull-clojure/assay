@@ -22,7 +22,6 @@
 
   - :stable-dependencies flags a dependency on a less stable brick (the
     Stable Dependencies Principle).
-  - :cycles flags bricks that depend on each other, directly or not.
   - :new-dependencies flags a dependency that is not in the base, when
     comparing with one (applied by the baseline component).
   - :unused-interface flags interface definitions that no other brick
@@ -78,7 +77,7 @@
 
 (defn mermaid
   "A Mermaid flowchart of the brick graph, top-down. Bases have rounded
-  ends. Edges in a stable-dependencies or cycle violation are red, and new
+  ends. Edges in a stable-dependencies violation are red, and new
   dependencies (from comparing with a base) are dashed."
   [bricks edges violations]
   (core/mermaid bricks edges violations))

@@ -73,7 +73,7 @@
 
 (defn- change-violations
   [head base-metrics changed change-thresholds]
-  (for [{:keys [brick metrics locations]} (:bricks head)
+  (for [{:keys [brick metrics]} (:bricks head)
         :when (changed (:name brick))
         [metric rules] change-thresholds
         rule rules
@@ -82,17 +82,16 @@
               result (when (some? value)
                        (evaluate-change rule base-value value))]
         :when result]
-    (cond-> (merge {:scope :brick
-                    :brick brick
-                    :metric metric
-                    :value value
-                    :base-value base-value
-                    :rule rule
-                    :level (:level rule :error)
-                    :status :new
-                    :change? true}
-              result)
-      (get locations metric) (assoc :location (get locations metric)))))
+    (merge {:scope :brick
+            :brick brick
+            :metric metric
+            :value value
+            :base-value base-value
+            :rule rule
+            :level (:level rule :error)
+            :status :new
+            :change? true}
+      result)))
 
 (defn- new-dependency-violations
   [base head level]
