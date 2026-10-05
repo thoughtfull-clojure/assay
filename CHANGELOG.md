@@ -7,6 +7,8 @@ and assay follows [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-10-04
+
 ### Added
 
 - Function metrics: cyclomatic complexity, nesting depth, size in forms,
