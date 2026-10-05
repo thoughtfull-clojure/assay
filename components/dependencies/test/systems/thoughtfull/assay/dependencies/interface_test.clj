@@ -200,3 +200,9 @@
             (distinct (map :level (dependencies/check
                                     {:connascence-of-position {:max 2}}
                                     analysis))))))))
+
+(deftest neighbors-test
+  (is (= [{:brick {:name "a"} :depends-on ["b" "c"] :depended-on-by []}
+          {:brick {:name "b"} :depends-on [] :depended-on-by ["a"]}]
+        (dependencies/neighbors [{:brick {:name "a"}} {:brick {:name "b"}}]
+          [{:from "a" :to "c"} {:from "a" :to "b"} {:from "a" :to "b"}]))))

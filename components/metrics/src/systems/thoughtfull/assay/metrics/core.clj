@@ -416,9 +416,10 @@
   (count (take-while #(not= '& (token-value %)) (parse/code-children params))))
 
 (defn- function
-  [file node]
+  [file ns node]
   (let [deepest (deepest-at node 1)]
     {:name (function-name node)
+     :ns ns
      :file file
      :line (:row (meta node))
      :complexity (complexity node)
@@ -498,12 +499,13 @@
 (defn measure-source
   [file source]
   (let [forms (parse/parse-string source)
+        info (parse/ns-info forms)
         top-level (parse/top-level-forms forms)
         deepest (reduce deeper shallowest
                   (for [form top-level]
                     (assoc (deepest-at form 1) :form form)))]
     (merge
-      (select-keys (parse/ns-info forms) [:ns :requires])
+      (select-keys info [:ns :requires])
       {:file file
        :forms (form-count forms)
        :top-level-forms (count top-level)
@@ -518,7 +520,7 @@
        :functions (->> top-level
                     (filter #(contains? function-heads
                                (parse/head-symbol %)))
-                    (mapv #(function file %)))
+                    (mapv #(function file (:ns info) %)))
        :definitions (->> top-level
                       (filter #(contains? definition-heads
                                  (parse/head-symbol %)))
@@ -569,3 +571,16 @@
 (defn label
   [{:keys [scope metric label]}]
   (or label (get-in labels [(or scope :brick) metric]) (name metric)))
+
+(defn notable-functions
+  [measurements flagged? n]
+  (let [functions (mapcat (fn [{:keys [brick functions]}]
+                            (map #(assoc % :brick brick) functions))
+                    measurements)]
+    (->> functions
+      (sort-by (juxt #(if (flagged? %) 0 1) (comp - :complexity) :file :line))
+      (take (max n (count (filter flagged? functions)))))))
+
+(defn function-id
+  [{:keys [ns name]}]
+  (if ns (str ns "/" name) name))

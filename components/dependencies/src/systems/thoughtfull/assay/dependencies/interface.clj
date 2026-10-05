@@ -65,3 +65,10 @@
   merges key by key."
   [rules]
   (core/merge-rules rules))
+
+(defn neighbors
+  "For each brick, in order: a map of :brick, :depends-on, and
+  :depended-on-by, the sorted names of the bricks on each side of its
+  edges."
+  [bricks edges]
+  (core/neighbors bricks edges))

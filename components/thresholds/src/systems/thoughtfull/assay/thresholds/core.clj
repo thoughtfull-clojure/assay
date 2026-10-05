@@ -1,6 +1,7 @@
 (ns systems.thoughtfull.assay.thresholds.core
   (:require
-   [clojure.string :as str]))
+   [clojure.string :as str]
+   [systems.thoughtfull.assay.metrics.interface :as metrics]))
 
 (def default-config
   {:brick-thresholds
@@ -143,7 +144,7 @@
             :value value
             :rule rule
             :level (:level rule :error)
-            :subject (:name function)
+            :subject (metrics/function-id function)
             :location {:file (:file function)
                        :line (if (= :depth metric)
                                (:depth-line function)

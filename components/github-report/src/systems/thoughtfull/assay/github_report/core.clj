@@ -1,6 +1,7 @@
 (ns systems.thoughtfull.assay.github-report.core
   (:require
    [clojure.string :as str]
+   [systems.thoughtfull.assay.dependencies.interface :as dependencies]
    [systems.thoughtfull.assay.metrics.interface :as metrics]
    [systems.thoughtfull.assay.thresholds.interface :as thresholds]))
 
@@ -168,13 +169,22 @@
     :warning (str "**" text "** ⚠️")
     text))
 
-(defn- metrics-section
-  "The summary table: every brick, then a total row."
+(defn- legend
+  "A collapsed table explaining each entry of a metric registry."
+  [entries]
+  (str "<details><summary>What these metrics mean</summary>\n\n"
+    (table ["Metric" "Meaning"] (map (juxt :label :explanation) entries))
+    "\n\n</details>"))
+
+(defn- bricks-section
+  "Every brick, then a total row, and the legend."
   [{:keys [bricks violations]}]
   (let [flagged (flagged-cells violations)
         column-level (fn [brick-name {:keys [keys]}]
-                       (reduce thresholds/worse-level nil (map #(flagged [brick-name %]) keys)))]
-    (str "### Metrics\n\n"
+                       (reduce thresholds/worse-level nil
+                         (map #(flagged [brick-name %]) keys)))
+        totals (metrics/totals bricks)]
+    (str "### Bricks\n\n"
       (table (cons "Brick" (map :label metrics/columns))
         (concat
           (for [{:keys [brick] :as m} bricks]
@@ -183,21 +193,54 @@
                 (metric-cell (column-level (:name brick) column)
                   (metrics/column-text column (:metrics m))))))
           [(cons "**Total**"
-             (let [totals (metrics/totals bricks)]
-               (for [column metrics/columns]
-                 (metrics/column-text column totals))))])))))
+             (for [column metrics/columns]
+               (metrics/column-text column totals)))]))
+      "\n\n" (legend metrics/columns))))
 
-(defn- legend-section
-  "A collapsed explanation of the brick and function metrics."
-  []
-  (str "<details><summary>What these metrics mean</summary>\n\n"
-    "**Bricks**\n\n"
-    (table ["Metric" "Meaning"]
-      (map (juxt :label :explanation) metrics/columns))
-    "\n\n**Functions**\n\n"
-    (table ["Metric" "Meaning"]
-      (map (juxt :label :explanation) metrics/function-metrics))
-    "\n\n</details>"))
+(defn- flagged-functions
+  "Map of [brick name, function name, metric] to the worst level of the
+  function violations a change introduced (or all, without a comparison)."
+  [violations]
+  (reduce
+    (fn [acc {:keys [brick subject metric level]}]
+      (update acc [(:name brick) subject metric] thresholds/worse-level level))
+    {}
+    (->> violations
+      (filter #(= :function (:scope %)))
+      (remove (comp #{:existing :indirect} :status)))))
+
+(defn- functions-section
+  "Functions that break a rule, then the most complex of the rest, and the
+  legend."
+  [{:keys [bricks violations]} n]
+  (let [flagged (flagged-functions violations)
+        flagged-fns (set (map (comp vec (partial take 2)) (keys flagged)))
+        functions (metrics/notable-functions bricks
+                    #(flagged-fns [(:name (:brick %)) (metrics/function-id %)]) n)]
+    (when (seq functions)
+      (str "### Functions\n\n"
+        (table (concat ["Function" "Brick"]
+                 (map :label metrics/function-metrics)
+                 ["Location"])
+          (for [{:keys [brick file line] :as f} functions]
+            (concat
+              [(str "`" (:name f) "`") (:name brick)]
+              (for [{k :key} metrics/function-metrics]
+                (metric-cell (flagged [(:name brick) (metrics/function-id f) k])
+                  (str (get f k))))
+              [(str "`" file ":" line "`")])))
+        "\n\n" (legend metrics/function-metrics)))))
+
+(defn- dependencies-section
+  [{:keys [bricks edges]}]
+  (when (seq edges)
+    (str "### Dependencies\n\n"
+      (table ["Brick" "Depends on" "Depended on by"]
+        (for [{:keys [brick depends-on depended-on-by]}
+              (dependencies/neighbors bricks edges)]
+          [(brick-label brick)
+           (str/join ", " depends-on)
+           (str/join ", " depended-on-by)])))))
 
 (defn summary
   [report]
@@ -208,6 +251,7 @@
             (violations-section report)
             (resolved-section report)
             (when (:comparison report) (changes-section report))
-            (metrics-section report)
-            (legend-section)]))
+            (bricks-section report)
+            (functions-section report 15)
+            (dependencies-section report)]))
     "\n"))

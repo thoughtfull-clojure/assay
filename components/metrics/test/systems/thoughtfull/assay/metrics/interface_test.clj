@@ -231,3 +231,19 @@
   (is (= "Parameters" (metrics/label {:scope :function :metric :params})))
   (is (= "Custom" (metrics/label {:metric :forms :label "Custom"})))
   (is (= "mystery" (metrics/label {:metric :mystery}))))
+
+(deftest notable-functions-test
+  (let [measurements [{:brick {:name "a"}
+                       :functions [{:name "simple" :complexity 1}
+                                   {:name "flagged" :complexity 2}
+                                   {:name "complex" :complexity 9}]}
+                      {:brick {:name "b"}
+                       :functions [{:name "medium" :complexity 5}]}]
+        flagged? #(= "flagged" (:name %))]
+    (is (= ["flagged" "complex" "medium"]
+          (map :name (metrics/notable-functions measurements flagged? 3))))
+    (is (= "a" (:name (:brick (first (metrics/notable-functions
+                                       measurements flagged? 3))))))
+    (is (= ["flagged"]
+          (map :name (metrics/notable-functions measurements flagged? 0)))
+      "every flagged function, even beyond n")))

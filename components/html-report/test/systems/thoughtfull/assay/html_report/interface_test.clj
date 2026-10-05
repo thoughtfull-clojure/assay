@@ -92,3 +92,25 @@
 (deftest legend-code-test
   (is (str/includes? (html-report/render report)
         "<dd><code>Ce / (Ca + Ce)</code>, from <code>0</code>")))
+
+(deftest same-name-functions-test
+  (let [html (html-report/render
+               (assoc report
+                 :bricks [{:brick {:name "a" :type :component}
+                           :metrics {}
+                           :functions [{:name "analyze" :ns 'a.core
+                                        :file "a/core.clj" :line 1
+                                        :complexity 12 :depth 1 :forms 9
+                                        :params 1}
+                                       {:name "analyze" :ns 'a.interface
+                                        :file "a/interface.clj" :line 1
+                                        :complexity 1 :depth 1 :forms 5
+                                        :params 1}]}]
+                 :violations [{:scope :function
+                               :brick {:name "a" :type :component}
+                               :metric :complexity
+                               :subject "a.core/analyze"
+                               :level :error
+                               :message "12 is above the maximum of 10"}]))]
+    (is (= 1 (count (re-seq #"class=\"num error\"" html)))
+      "only the offending analyze is highlighted, not its namesake")))

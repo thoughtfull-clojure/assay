@@ -225,3 +225,14 @@
                workspace bricks used))
            (when (level duplicate-code)
              (connascence/algorithm-violations duplicate-code bricks))))))
+
+(defn neighbors
+  [bricks edges]
+  (let [uses (group-by :from edges)
+        used-by (group-by :to edges)
+        names (fn [xs k] (vec (sort (distinct (map k xs)))))]
+    (for [{:keys [brick]} bricks
+          :let [brick-name (:name brick)]]
+      {:brick brick
+       :depends-on (names (uses brick-name) :to)
+       :depended-on-by (names (used-by brick-name) :from)})))

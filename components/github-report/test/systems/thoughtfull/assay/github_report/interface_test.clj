@@ -74,9 +74,28 @@
 (deftest total-row-test
   (is (str/includes? (github-report/summary report) "| **Total** |")))
 
-(deftest legend-test
-  (let [summary (github-report/summary report)]
+(deftest sections-test
+  (let [summary (github-report/summary
+                  (-> report
+                    (assoc-in [:bricks 0 :functions]
+                      [{:name "f" :file "components/a/src/a.clj" :line 7
+                        :complexity 12 :depth 3 :forms 40 :params 1}])
+                    (update :violations conj
+                      {:scope :function
+                       :brick {:name "a" :type :component}
+                       :metric :complexity
+                       :subject "f"
+                       :level :error
+                       :message "12 is above the maximum of 10"})
+                    (assoc :edges [{:from "a" :to "b"}])))
+        sections (map second (re-seq #"(?m)^### (.*)$" summary))]
+    (is (= ["Violations" "Bricks" "Functions" "Dependencies"] sections))
     (is (str/includes? summary
-          "<details><summary>What these metrics mean</summary>\n\n**Bricks**"))
-    (is (str/includes? summary "| Parameters | Positional parameters"))
-    (is (str/ends-with? summary "</details>\n"))))
+          "| `f` | a | **12** ❌ | 3 | 40 | 1 | `components/a/src/a.clj:7` |")
+      "the function's offending value is highlighted")
+    (is (str/includes? summary "| component a | b |  |"))
+    (is (= 2 (count (re-seq #"<details><summary>What these metrics mean" summary)))
+      "a legend after the bricks and after the functions")
+    (is (str/includes? summary "</details>\n\n### Functions")
+      "the bricks legend closes before the functions section")
+    (is (str/includes? summary "| Parameters | Positional parameters"))))

@@ -12,7 +12,7 @@
   "Measure a string of Clojure source from file (a path used for locations).
   Returns a map of :file, :ns and :requires (from its ns form, if any),
   :forms, :top-level-forms, :max-nesting-depth, :max-nesting-location,
-  :functions, and :definitions. Each definition (def, defn, defmulti, and
+  :functions (each also has :ns), and :definitions. Each definition (def, defn, defmulti, and
   so on) is a map of :name (a symbol), :line, and :references, the set of
   symbols in its body. Each function is a map of :name, :file, :line, :complexity,
   :depth (with :depth-line, the line of its deepest form), :forms, and
@@ -61,3 +61,17 @@
   then the registry's label, then the metric's name."
   [m]
   (core/label m))
+
+(defn notable-functions
+  "The functions worth showing in a report: those for which flagged? is true,
+  then the most complex of the rest, up to n in all (or more, if more are
+  flagged). Each function map gets the :brick it belongs to."
+  [measurements flagged? n]
+  (core/notable-functions measurements flagged? n))
+
+(defn function-id
+  "A function's identity across a workspace: its name qualified by its
+  namespace, since bricks often have same-named functions in different
+  namespaces."
+  [function]
+  (core/function-id function))

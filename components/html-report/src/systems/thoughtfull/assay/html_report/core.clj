@@ -1,6 +1,7 @@
 (ns systems.thoughtfull.assay.html-report.core
   (:require
    [clojure.string :as str]
+   [systems.thoughtfull.assay.dependencies.interface :as dependencies]
    [systems.thoughtfull.assay.metrics.interface :as metrics]
    [systems.thoughtfull.assay.thresholds.interface :as thresholds]))
 
@@ -285,20 +286,13 @@ details.legend dd code {
 ;; Functions
 
 (defn- functions-table
-  "Functions that break a rule, then the most complex of the rest, up to n
-  in all."
+  "Functions that break a rule, then the most complex of the rest."
   [bricks violations n]
   (let [flagged (flagged-cells violations :function
                   (juxt (comp :name :brick) :subject :metric))
         flagged-fns (set (map (comp vec (partial take 2)) (keys flagged)))
-        functions (->> bricks
-                    (mapcat (fn [{:keys [brick functions]}]
-                              (map #(assoc % :brick brick) functions)))
-                    (sort-by (juxt #(if (flagged-fns [(:name (:brick %))
-                                                      (:name %)])
-                                      0 1)
-                               (comp - :complexity) :file :line))
-                    (take (max n (count flagged-fns))))]
+        functions (metrics/notable-functions bricks
+                    #(flagged-fns [(:name (:brick %)) (metrics/function-id %)]) n)]
     (if (empty? functions)
       [:p {:class "none"} "No functions found."]
       (table (concat ["Function" "Brick"]
@@ -308,24 +302,21 @@ details.legend dd code {
           (concat
             [[:code (:name f)] (:name brick)]
             (for [{k :key} metrics/function-metrics]
-              (metric-cell (flagged [(:name brick) (:name f) k]) (get f k)))
+              (metric-cell (flagged [(:name brick) (metrics/function-id f) k]) (get f k)))
             [(location (dissoc f :name))]))))))
 
 ;; Dependencies
 
 (defn- dependencies-table
   [bricks edges]
-  (let [uses (group-by :from edges)
-        used-by (group-by :to edges)
-        names (fn [xs k] (str/join ", " (sort (distinct (map k xs)))))]
-    (if (empty? edges)
-      [:p {:class "none"} "No dependencies between bricks."]
-      (table ["Brick" "Depends on" "Depended on by"]
-        (for [{:keys [brick]} bricks
-              :let [brick-name (:name brick)]]
-          [(brick-cell brick)
-           (names (uses brick-name) :to)
-           (names (used-by brick-name) :from)])))))
+  (if (empty? edges)
+    [:p {:class "none"} "No dependencies between bricks."]
+    (table ["Brick" "Depends on" "Depended on by"]
+      (for [{:keys [brick depends-on depended-on-by]}
+            (dependencies/neighbors bricks edges)]
+        [(brick-cell brick)
+         (str/join ", " depends-on)
+         (str/join ", " depended-on-by)]))))
 
 ;; Thresholds
 

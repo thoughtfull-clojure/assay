@@ -1,6 +1,7 @@
 (ns systems.thoughtfull.assay.baseline.core
   (:require
-   [clojure.string :as str]))
+   [clojure.string :as str]
+   [systems.thoughtfull.assay.metrics.interface :as metrics]))
 
 (defn- fmt
   [x]
@@ -124,7 +125,7 @@
         base-functions (into {}
                          (for [{:keys [brick functions]} (:bricks base)
                                function functions]
-                           [[(:name brick) (:name function)] function]))
+                           [[(:name brick) (metrics/function-id function)] function]))
         violations (for [v (:violations head)]
                      (assoc v
                        :status (status base-keys changed v)

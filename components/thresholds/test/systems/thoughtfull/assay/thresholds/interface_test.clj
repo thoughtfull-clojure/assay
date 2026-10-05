@@ -107,3 +107,13 @@
   (is (= :error (thresholds/worse-level :warning :error)))
   (is (= :warning (thresholds/worse-level nil :warning)))
   (is (nil? (thresholds/worse-level nil nil))))
+
+(deftest function-subject-test
+  (is (= ["a.core/f"]
+        (map :subject
+          (thresholds/check {:function-thresholds
+                             {:complexity [{:rule :max :value 1}]}}
+            [{:brick {:name "a" :type :component}
+              :functions [{:name "f" :ns 'a.core :complexity 2}
+                          {:name "f" :ns 'a.interface :complexity 1}]}])))
+    "a function's subject is its namespace-qualified name"))
