@@ -73,7 +73,25 @@
     :section :io
     :label "Mutable state"
     :description (str "Top-level atoms, refs, agents, volatiles, dynamic"
-                   " vars, and alter-var-root calls.")}])
+                   " vars, and alter-var-root calls.")}
+   {:key :error-surface
+    :section :errors
+    :label "Error surface"
+    :description "Interface definitions that can throw, directly or not."
+    :components-only true}
+   {:key :untyped-errors
+    :section :errors
+    :label "Untyped errors"
+    :description (str "Throws of Java exceptions, or of ex-info without a"
+                   " :type key.")}
+   {:key :catches
+    :section :errors
+    :label "Catches"
+    :description "catch clauses."}
+   {:key :broad-catches
+    :section :errors
+    :label "Broad catches"
+    :description "catch clauses for Exception, Throwable, and the like."}])
 
 ;; Explanations are legend entries. Code and formulas are in backticks,
 ;; which reports render as code.
@@ -131,7 +149,24 @@
    (str "Top-level `atom`, `ref`, `agent`, and `volatile!` definitions,"
      " `^:dynamic` vars, and `alter-var-root` calls: state hidden from the"
      " functions that depend on it, which makes tests interfere with each"
-     " other.")})
+     " other.")
+   :error-surface
+   (str "Interface definitions that can throw: their body contains `throw`,"
+     " or refers to a definition that can, in this brick or another. Each"
+     " is a failure every caller must be ready for; the fewer, the simpler"
+     " the interface. Bases have no interface.")
+   :untyped-errors
+   (str "Throws that give callers nothing to tell failures apart by: a Java"
+     " exception such as `(Exception. msg)`, or `ex-info` whose data map"
+     " has no `:type` key (or `:cognitect.anomalies/category`). Rethrows,"
+     " and data that isn't a literal map, don't count.")
+   :catches
+   (str "`catch` clauses. Catching belongs where a failure can be handled,"
+     " usually at the edges, in bases.")
+   :broad-catches
+   (str "`catch` clauses for `Exception`, `RuntimeException`, `Throwable`,"
+     " or `Object`. In a component, a broad catch decides for every caller"
+     " what a failure means.")})
 
 (def ^:private metric-index
   (into {} (map (juxt :key identity)) metrics))
@@ -149,7 +184,8 @@
   (vec (for [[key label] [[:dependencies "Dependencies"]
                           [:complexity "Complexity"]
                           [:modularity "Modularity"]
-                          [:io "I/O and mutability"]]]
+                          [:io "I/O and mutability"]
+                          [:errors "Error handling"]]]
          {:key key
           :label label
           :columns (filterv #(= key (:section %)) columns)})))
@@ -494,19 +530,68 @@
   #{"def" "defn" "defn-" "defmacro" "defmulti" "defmethod" "defonce"})
 
 (defn- definition
-  "A top-level definition's :name (a symbol), :line, and :references, the
-  symbols in its body. A defmethod is named for its multimethod."
+  "A top-level definition's :name (a symbol), :line, :references, the
+  symbols in its body, and :throws?, true if its body throws. A defmethod is
+  named for its multimethod."
   [node]
   (let [[_ name-node & body] (parse/code-children node)
-        definition-name (token-value (unwrap-meta name-node))]
+        definition-name (token-value (unwrap-meta name-node))
+        nodes (mapcat #(tree-seq n/inner? parse/code-children %) body)]
     (when (symbol? definition-name)
       {:name definition-name
        :line (:row (meta node))
-       :references (into #{}
-                     (comp (mapcat #(tree-seq n/inner? parse/code-children %))
-                       (keep token-value)
-                       (filter symbol?))
-                     body)})))
+       :references (into #{} (comp (keep token-value) (filter symbol?)) nodes)
+       :throws? (boolean (some #(= "throw" (parse/head-symbol %)) nodes))})))
+
+;; Error handling
+
+(def ^:private broad-exceptions
+  #{"Exception" "java.lang.Exception" "RuntimeException"
+    "java.lang.RuntimeException" "Throwable" "java.lang.Throwable"
+    "Object" "java.lang.Object"})
+
+(defn- typed-data?
+  "True if an ex-info data map has a :type key, in any namespace, or a
+  :cognitect.anomalies/category key."
+  [map-node]
+  (some #(let [k (token-value %)]
+           (and (keyword? k)
+             (or (= "type" (name k)) (= :cognitect.anomalies/category k))))
+    (take-nth 2 (parse/code-children map-node))))
+
+(defn- thrown-kind
+  "What a throw form throws: :typed or :untyped ex-info (by its literal data
+  map), :unknown ex-info data, a :java exception constructed in place, or
+  a :rethrow of something else."
+  [throw-node]
+  (let [arg (second (parse/code-children throw-node))
+        head (some-> arg parse/head-symbol)]
+    (cond
+      (= "ex-info" head)
+      (let [data (nth (parse/code-children arg) 2 nil)]
+        (cond
+          (not= :map (some-> data n/tag)) :unknown
+          (typed-data? data) :typed
+          :else :untyped))
+
+      (or (= "new" head) (some-> head (str/ends-with? "."))) :java
+      :else :rethrow)))
+
+(defn- error-handling
+  "Every throw, as {:line :kind}, and every catch clause, as {:line :class
+  :broad?}, in top-level forms."
+  [top-level]
+  (let [nodes (mapcat #(tree-seq n/inner? parse/code-children %) top-level)]
+    {:throws (vec (for [node nodes
+                        :when (= "throw" (parse/head-symbol node))]
+                    {:line (:row (meta node)) :kind (thrown-kind node)}))
+     :catches (vec (for [node nodes
+                         :when (= "catch" (parse/head-symbol node))
+                         :let [class (some-> (second (parse/code-children node))
+                                       n/string)]]
+                     {:line (:row (meta node))
+                      :class class
+                      :broad? (contains? broad-exceptions class)}))}))
 
 ;; Mutable state
 
@@ -570,7 +655,8 @@
                       vec)
        :keywords (keywords top-level)
        :fragments (fragments top-level)
-       :mutable-state (vec (mutable-state top-level))})))
+       :mutable-state (vec (mutable-state top-level))}
+      (error-handling top-level))))
 
 (defn- mean
   [xs]
@@ -588,10 +674,15 @@
                :functions (count functions)
                :mean-function-complexity (mean (map :complexity functions))
                :mean-function-depth (mean (map :depth functions))
-               :mutable-state (count (mapcat :mutable-state files))}
+               :mutable-state (count (mapcat :mutable-state files))
+               :untyped-errors (count (filter (comp #{:untyped :java} :kind)
+                                        (mapcat :throws files)))
+               :catches (count (mapcat :catches files))
+               :broad-catches (count (filter :broad? (mapcat :catches files)))}
      :functions functions
      :sources (mapv #(select-keys % [:file :ns :requires :forms :definitions
-                                     :keywords :fragments :mutable-state])
+                                     :keywords :fragments :mutable-state
+                                     :throws :catches])
                 files)}))
 
 (def ^:private labels

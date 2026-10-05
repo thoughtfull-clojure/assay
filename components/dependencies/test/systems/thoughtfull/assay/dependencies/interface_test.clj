@@ -75,7 +75,8 @@
             (dependencies/analyze workspace
               [(brick "lonely" :component (source 't.lonely.interface 10))]))]
     (is (= {:afferent 0 :efferent 0 :instability nil :abstractness 0.0
-            :cohesion nil :shared-keywords 0 :libraries 0 :shared-libraries 0}
+            :cohesion nil :shared-keywords 0 :libraries 0 :shared-libraries 0
+            :error-surface 0}
           (m "lonely")))))
 
 (deftest check-test
@@ -163,6 +164,57 @@
                " uses it shares the state")]]
           (map (juxt (comp :name :brick) :location :message) violations))
       "components only: a base is the shell")))
+
+(deftest error-surface-test
+  ;; a's interface delegates to core, whose f calls b's interface, whose
+  ;; impl throws. a's g throws nothing.
+  (let [defn* (fn [name throws? & refs]
+                {:name name :line 1 :references (set refs) :throws? throws?})
+        m (metrics-by-name
+            (dependencies/analyze workspace
+              [{:brick {:name "a" :type :component}
+                :metrics {}
+                :sources [{:ns 't.a.interface :file "a/interface.clj"
+                           :requires [{:ns 't.a.core :as 'core}]
+                           :definitions [(defn* 'f false 'core/f)
+                                         (defn* 'g false 'core/g)]}
+                          {:ns 't.a.core :file "a/core.clj"
+                           :requires [{:ns 't.b.interface :as 'b}]
+                           :definitions [(defn* 'f false 'b/h)
+                                         (defn* 'g false 'inc)]}]}
+               {:brick {:name "b" :type :component}
+                :metrics {}
+                :sources [{:ns 't.b.interface :file "b/interface.clj"
+                           :requires [{:ns 't.b.core :refer ['impl]}]
+                           :definitions [(defn* 'h false 'impl)]}
+                          {:ns 't.b.core :file "b/core.clj" :requires []
+                           :definitions [(defn* 'impl true)]}]}
+               {:brick {:name "x" :type :base}
+                :metrics {}
+                :sources [{:ns 't.x.main :file "x/main.clj" :requires []
+                           :definitions [(defn* '-main true)]}]}]))]
+    (is (= {"a" 1 "b" 1 "x" nil} (update-vals m :error-surface))
+      "across bricks, through referred and aliased symbols; bases have none")))
+
+(deftest broad-catch-test
+  (is (= [["a" {:file "a/core.clj" :line 4}
+           "catches Exception, deciding for every caller what a failure means"]]
+        (->> (dependencies/check {}
+               (dependencies/analyze workspace
+                 [{:brick {:name "a" :type :component}
+                   :metrics {}
+                   :sources [{:file "a/core.clj" :ns 't.a.core
+                              :catches [{:line 4 :class "Exception" :broad? true}
+                                        {:line 9 :class "clojure.lang.ExceptionInfo"
+                                         :broad? false}]}]}
+                  {:brick {:name "x" :type :base}
+                   :metrics {}
+                   :sources [{:file "x/main.clj" :ns 't.x.main
+                              :catches [{:line 2 :class "Throwable"
+                                         :broad? true}]}]}]))
+          (filter #(= :broad-catch (:metric %)))
+          (map (juxt (comp :name :brick) :location :message))))
+    "components only: bases are where catching belongs"))
 
 (deftest merge-candidates-test
   ;; s is used only by a, a component 10 times its size. a is used only by

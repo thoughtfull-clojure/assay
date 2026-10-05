@@ -7,15 +7,18 @@
   "Measure a string of Clojure source from file (a path used for locations).
   Returns a map of :file, :ns and :requires (from its ns form, if any),
   :forms, :top-level-forms, :functions (each also has :ns), :definitions,
-  :keywords, :fragments, and :mutable-state.
+  :keywords, :fragments, :mutable-state, :throws, and :catches.
 
   Each definition (def, defn, defmulti, and so on) is a map of :name (a
-  symbol), :line, and :references, the set of symbols in its body. Each
+  symbol), :line, :references, the set of symbols in its body, and
+  :throws?, true if its body throws. Each
   function is a map of :name, :file, :line, :complexity, :depth (with
   :depth-line, the line of its deepest form), :forms, and :params. Each
   :mutable-state entry is a top-level atom, ref, agent, volatile, or
   dynamic var, or an alter-var-root call, as a map of :name, :line, and
-  :kind."
+  :kind. Each throw is a map of :line and :kind (:typed, :untyped, or
+  :unknown ex-info, a :java exception, or a :rethrow), and each catch
+  clause a map of :line, :class, and :broad?."
   [file source]
   (core/measure-source file source))
 
@@ -24,7 +27,8 @@
   component), reading files relative to root. Returns a map of :brick,
   :metrics (metric key to number, or nil when undefined), :functions, and
   :sources (each source file's :file, :ns, :requires, :forms,
-  :definitions, :keywords, :fragments, and :mutable-state)."
+  :definitions, :keywords, :fragments, :mutable-state, :throws, and
+  :catches)."
   [root brick]
   (core/measure-brick root brick))
 

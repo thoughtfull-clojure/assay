@@ -124,6 +124,22 @@ are `next.jdbc`, and `rewrite-clj.node` and `rewrite-clj.parser` are
 place, while one that several bricks require, such as a database driver,
 points to a missing gateway component.
 
+### Error handling metrics
+
+| Metric | Meaning |
+| --- | --- |
+| Error surface | Interface definitions that can throw, even indirectly |
+| Untyped errors | Throws of Java exceptions, or of `ex-info` without a `:type` key |
+| Catches | `catch` clauses |
+| Broad catches | `catch` clauses for `Exception`, `RuntimeException`, `Throwable`, or `Object` |
+
+A definition can throw when its body contains `throw`, or when it refers
+to a definition that can, whichever brick that definition is in. Assay doesn't
+account for catching, so error surface is an upper bound. An `ex-info`
+counts as typed when its literal data map has a `:type` key, in any
+namespace, or `:cognitect.anomalies/category`. Rethrows, and data that
+isn't a literal map, don't count either way.
+
 ## Usage
 
 Run assay from the workspace root:
@@ -146,13 +162,13 @@ Reports list only error-level violations unless you pass `--warnings`,
 and count the warnings they leave out. Warnings point to code worth
 refactoring before it reaches an error, but they never fail a run.
 
-After the violations, the HTML and GitHub reports have four sections:
+After the violations, the HTML and GitHub reports have five sections:
 dependencies (the graph, afferent and efferent coupling, and instability),
 complexity (size and function complexity), modularity (abstractness,
-cohesion, and shared keywords), and I/O and mutability (libraries, with a
-table of those more than one brick requires, and mutable state). Each has
-a table of every brick, with a
-row of averages across all bricks. With `--base`, a changed brick's values
+cohesion, and shared keywords), I/O and mutability (libraries, with a
+table of those more than one brick requires, and mutable state), and
+error handling. Each has a table of every brick, with a row of averages
+across all bricks. With `--base`, a changed brick's values
 show how much they changed, such as `12 (+3)`. The tables mark each value
 2 or more standard deviations from the mean of all bricks: the HTML report
 outlines it, and the GitHub report sets it in bold. Afferent coupling,
@@ -199,6 +215,7 @@ Assay reads `assay.edn` at the workspace root, or the file you pass to
                     :merge-candidates {:max-size 0.25 :level :warning}
                     :library-spread {:max-bricks 1 :level :warning}
                     :mutable-state :warning
+                    :broad-catch :warning
                     :co-change {:since "12 months" :min-shared 5
                                 :min-strength 0.5 :max-bricks-per-commit 5
                                 :level :warning}}
@@ -232,6 +249,9 @@ Dependency rules set a level, or `nil` to turn a check off:
 - `:mutable-state`: a top-level atom, ref, agent, volatile, or dynamic var,
   or an `alter-var-root` call, in a component. Bases are the imperative
   shell, so they don't count.
+- `:broad-catch`: a `catch` clause for `Exception`, `RuntimeException`,
+  `Throwable`, or `Object` in a component. Bases, at the edges, are where
+  catching belongs.
 - `:connascence-of-position`, with `:max`: an interface function that other
   bricks call has more than `:max` positional parameters.
 - `:duplicate-code`, with `:min-forms`: code of at least `:min-forms` forms

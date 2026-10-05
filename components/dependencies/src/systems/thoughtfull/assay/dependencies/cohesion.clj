@@ -26,9 +26,9 @@
           (own sym) [ns sym]
           (refers sym) [(refers sym) sym])))))
 
-(defn- references
-  "Every resolved reference in a source: maps of :from (a definition name),
-  :ns, and :name."
+(defn references
+  "Every resolved reference in a source: maps of :from ([ns name] of the
+  referring definition), :ns, and :name."
   [source]
   (let [resolve (resolver source)]
     (for [{:keys [references] :as definition} (:definitions source)

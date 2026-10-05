@@ -4,6 +4,7 @@
    [systems.thoughtfull.assay.dependencies.co-change :as co-change]
    [systems.thoughtfull.assay.dependencies.cohesion :as cohesion]
    [systems.thoughtfull.assay.dependencies.connascence :as connascence]
+   [systems.thoughtfull.assay.dependencies.errors :as errors]
    [systems.thoughtfull.assay.dependencies.libraries :as libraries]
    [systems.thoughtfull.assay.dependencies.names :as names]))
 
@@ -16,7 +17,8 @@
    :co-change {:since "12 months" :min-shared 5 :min-strength 0.5
                :max-bricks-per-commit 5 :level :warning}
    :library-spread {:max-bricks 1 :level :warning}
-   :mutable-state :warning})
+   :mutable-state :warning
+   :broad-catch :warning})
 
 (defn merge-rules
   "Merge configured rules over the defaults. A map-valued rule merges key
@@ -91,7 +93,8 @@
         dependents-of (group-by :to edges)
         cohesion-analysis (cohesion/analyze workspace measurements)
         shared-keywords (connascence/shared-keywords measurements)
-        library-analysis (libraries/analyze top-namespace measurements)]
+        library-analysis (libraries/analyze top-namespace measurements)
+        error-metrics (errors/analyze workspace measurements)]
     {:edges edges
      :workspace workspace
      :used (:used cohesion-analysis)
@@ -105,6 +108,7 @@
                      (set (map :from (dependents-of brick-name))))
                    (get-in cohesion-analysis [:metrics brick-name])
                    (get-in library-analysis [:metrics brick-name])
+                   (error-metrics brick-name)
                    {:shared-keywords (shared-keywords brick-name)})))}))
 
 ;; Checks
@@ -199,6 +203,26 @@
                       " shares the state")
                     ", state hidden from the functions that use it"))})))
 
+(defn- broad-catch-violations
+  "Broad catch clauses in components. Bases, at the edges, are where a
+  failure's meaning is known."
+  [level {:keys [bricks]}]
+  (for [{:keys [brick sources]} bricks
+        :when (= :component (:type brick))
+        {:keys [file catches]} sources
+        {:keys [line class broad?]} catches
+        :when broad?]
+    {:scope :dependency
+     :brick brick
+     :metric :broad-catch
+     :label "Broad catch"
+     :subject (str file ":" line)
+     :level level
+     :rule {:rule :broad-catch}
+     :location {:file file :line line}
+     :message (str "catches " class ", deciding for every caller what a"
+                " failure means")}))
+
 (defn- level
   "A rule's level: the rule itself, or its :level when it has settings."
   [rule]
@@ -209,7 +233,7 @@
   (let [{:keys [stable-dependencies
                 connascence-of-position duplicate-code
                 merge-candidates co-change library-spread
-                mutable-state]} rules]
+                mutable-state broad-catch]} rules]
     (vec (concat
            (when stable-dependencies
              (stable-dependency-violations stable-dependencies analysis))
@@ -225,7 +249,9 @@
            (when (level library-spread)
              (libraries/violations library-spread analysis))
            (when mutable-state
-             (mutable-state-violations mutable-state analysis))))))
+             (mutable-state-violations mutable-state analysis))
+           (when broad-catch
+             (broad-catch-violations broad-catch analysis))))))
 
 (defn neighbors
   [bricks edges]

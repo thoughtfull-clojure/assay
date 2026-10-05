@@ -136,17 +136,40 @@
                       :functions 2
                       :mean-function-complexity 2.0
                       :mean-function-depth 2.0
-                      :mutable-state 0}
+                      :mutable-state 0
+                      :untyped-errors 0
+                      :catches 0
+                      :broad-catches 0}
             :sources [{:file file :ns (quote c) :requires [] :forms 22
                        :definitions [{:name (quote simple) :line 2
-                                      :references #{(quote x)}}
+                                      :references #{(quote x)}
+                                      :throws? false}
                                      {:name (quote branchy) :line 3
                                       :references (set (map symbol
-                                                         ["x" "if" "when"]))}]}]}
+                                                         ["x" "if" "when"]))
+                                      :throws? false}]}]}
           (-> (metrics/measure-brick root {:name "c" :files [file]})
             (dissoc :functions)
             (update :sources (partial mapv #(dissoc % :keywords :fragments
-                                              :mutable-state))))))))
+                                              :mutable-state :throws
+                                              :catches))))))))
+
+(deftest error-handling-test
+  (let [source (measure (str "(ns n)\n"
+                          "(defn a [] (throw (ex-info \"x\" {:type ::bad})))\n"
+                          "(defn b [] (throw (ex-info \"x\" {:command 1})))\n"
+                          "(defn c [m] (throw (ex-info \"x\" m)))\n"
+                          "(defn d [] (throw (IllegalStateException. \"x\")))\n"
+                          "(defn e [] (try (a) (catch Exception ex (throw ex))\n"
+                          "  (catch clojure.lang.ExceptionInfo _ nil)))\n"
+                          "(defn f [] (a))\n"))]
+    (is (= [:typed :untyped :unknown :java :rethrow]
+          (map :kind (:throws source))))
+    (is (= [["Exception" true] ["clojure.lang.ExceptionInfo" false]]
+          (map (juxt :class :broad?) (:catches source))))
+    (is (= [true true true true true false]
+          (map :throws? (:definitions source)))
+      "f only calls a definition that throws")))
 
 (deftest mutable-state-test
   (is (= [{:name 'cache :line 2 :kind :atom}
@@ -189,7 +212,11 @@
           :shared-keywords nil
           :libraries nil
           :shared-libraries nil
-          :mutable-state nil}
+          :mutable-state nil
+          :error-surface nil
+          :untyped-errors nil
+          :catches nil
+          :broad-catches nil}
         (metrics/averages
           [{:brick {:type :component}
             :metrics {:files 1 :forms 10 :functions 1
@@ -244,8 +271,9 @@
                                                       measurements))))))))))
 
 (deftest definitions-test
-  (is (= [{:name 'labels :line 1 :references #{'metrics/metrics 'into}}
-          {:name 'f :line 2 :references #{'labels}}]
+  (is (= [{:name 'labels :line 1 :references #{'metrics/metrics 'into}
+           :throws? false}
+          {:name 'f :line 2 :references #{'labels} :throws? false}]
         (:definitions
          (measure "(def ^:private labels (into {} metrics/metrics))\n(defn ^:private f [] labels)"))))
   (is (= "f" (-> (measure "(defn ^:private f [] 1)") :functions first :name))

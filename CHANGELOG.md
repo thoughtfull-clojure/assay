@@ -9,6 +9,10 @@ and assay follows [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+- An error handling section of the reports, with error surface (interface
+  definitions that can throw), untyped errors, catches, and broad
+  catches. The `:broad-catch` rule warns about catching `Exception`,
+  `Throwable`, and the like in components.
 - An I/O and mutability section of the reports, with two new rules.
   `:library-spread` warns at each require of a library that more than one
   brick requires, such as a database driver used outside its gateway

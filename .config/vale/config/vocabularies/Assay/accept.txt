@@ -25,3 +25,5 @@ namespaced
 Ousterhout's
 Ousterhout
 Tornhill
+(?i)untyped
+[Rr]ethrows?

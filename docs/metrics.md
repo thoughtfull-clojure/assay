@@ -315,6 +315,50 @@ a library such as Integrant or Component, and give it to the functions
 that need it. A cache can live in a value the caller holds. Bases don't
 count, since they're the imperative shell where state belongs.
 
+## Error handling metrics
+
+### Error surface
+
+Error surface counts a component's interface definitions that can throw,
+because their body throws or because something they call does, in any
+brick. Every one is a failure each caller has to be ready for. John
+Ousterhout's advice is to define errors out of existence: an interface
+that returns `nil` for a missing key, or treats deleting what isn't there
+as done, has fewer errors for callers to handle.
+
+To shrink it, handle failures inside the component where it knows what
+they mean, and make the remaining ones part of the interface's contract
+rather than an accident of its implementation. Assay doesn't account for
+catching, so a definition that catches everything it calls still counts.
+
+### Untyped errors
+
+Callers tell failures apart by what an error carries. A Java exception
+such as `(IllegalStateException. msg)` carries a message and a class; an
+`ex-info` without a `:type` key carries data, but nothing a caller can
+dispatch on without knowing its shape. Both leave callers parsing
+messages or guessing.
+
+Throw `ex-info` with a `:type` key, ideally namespaced, such as
+`{:type ::not-found :id id}`, or use `:cognitect.anomalies/category`. The
+types a component throws are part of its interface, like its functions'
+names.
+
+### Catches and broad catches
+
+Catching belongs where code can handle the failure, which is usually at
+the edges: a base that turns errors into exit codes or HTTP responses. A
+component that catches `Exception`, `RuntimeException`, `Throwable`, or
+`Object` decides for every caller what any failure means, including ones
+it didn't expect, such as a bug. Assay warns about broad catches in
+components.
+
+Catch the specific failure you can handle, such as
+`clojure.lang.ExceptionInfo` with a known `:type`, and let the rest reach
+code that knows what to do. A component that wraps a library sometimes
+has to catch broadly, to turn the library's exceptions into its own;
+then rethrow them as typed `ex-info` with the original as the cause.
+
 ## Connascence
 
 Connascence between bricks is coupling: code in one brick that must change

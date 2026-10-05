@@ -140,13 +140,13 @@
 
 (deftest section-order-test
   (is (= ["Violations" "Dependencies" "Complexity" "Modularity"
-          "I/O and mutability" "Thresholds"]
+          "I/O and mutability" "Error handling" "Thresholds"]
         (map second (re-seq #"<h2[^>]*>([^<]+)</h2>"
                       (html-report/render report))))))
 
 (deftest comparison-section-order-test
   (is (= ["Violations" "Resolved" "Dependencies" "Complexity" "Modularity"
-          "I/O and mutability" "Thresholds"]
+          "I/O and mutability" "Error handling" "Thresholds"]
         (map second
           (re-seq #"<h2[^>]*>([^<]+)</h2>"
             (html-report/render

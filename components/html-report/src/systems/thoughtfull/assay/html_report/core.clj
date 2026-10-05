@@ -422,32 +422,48 @@ import('https://cdn.jsdelivr.net/npm/mermaid@11.17.2/dist/mermaid.esm.min.mjs')
      (rule-text rule)
      (level-badge level)]))
 
+(defn- percent
+  [x]
+  (Math/round (* 100 (double x))))
+
+(def ^:private dependency-rule-texts
+  "Each dependency rule's [metric rule] text, from its settings."
+  {:stable-dependencies (constantly ["Stable dependencies"
+                                     "only on more stable bricks"])
+   :new-dependencies (constantly ["New dependencies"
+                                  "none the base didn't have"])
+   :mutable-state (constantly ["Mutable state" "none in components"])
+   :broad-catch (constantly ["Broad catch" "none in components"])
+   :connascence-of-position
+   (fn [{:keys [max]}]
+     ["Connascence of position"
+      (str "≤ " max " positional parameters in interface functions others"
+        " call")])
+   :duplicate-code
+   (fn [{:keys [min-forms]}]
+     ["Duplicate code" (str "none of ≥ " min-forms " forms across bricks")])
+   :co-change
+   (fn [{:keys [since min-shared min-strength]}]
+     ["Co-change"
+      (str "no bricks without a dependency that changed together in ≥ "
+        min-shared " commits and ≥ " (percent min-strength)
+        "% of one's commits, over " since)])
+   :library-spread
+   (fn [{:keys [max-bricks]}]
+     ["Library spread"
+      (str "each library required by ≤ " max-bricks
+        (if (= 1 max-bricks) " brick" " bricks"))])
+   :merge-candidates
+   (fn [{:keys [max-size]}]
+     ["Merge candidates"
+      (str "no component with one component dependent, ≤ " (percent max-size)
+        "% of its size")])})
+
 (defn- dependency-rule-text
   "A dependency rule's [metric rule] text. Some rules have settings."
-  [rule {:keys [max min-forms max-size since min-shared min-strength]
-         :as setting}]
-  (case rule
-    :stable-dependencies ["Stable dependencies" "only on more stable bricks"]
-    :new-dependencies ["New dependencies" "none the base didn't have"]
-    :mutable-state ["Mutable state" "none in components"]
-    :connascence-of-position
-    ["Connascence of position"
-     (str "≤ " max " positional parameters in interface functions others call")]
-    :duplicate-code
-    ["Duplicate code" (str "none of ≥ " min-forms " forms across bricks")]
-    :co-change
-    ["Co-change"
-     (str "no bricks without a dependency that changed together in ≥ "
-       min-shared " commits and ≥ " (Math/round (* 100 (double min-strength)))
-       "% of one's commits, over " since)]
-    :library-spread
-    ["Library spread"
-     (str "each library required by ≤ " (:max-bricks setting)
-       (if (= 1 (:max-bricks setting)) " brick" " bricks"))]
-    :merge-candidates
-    ["Merge candidates"
-     (str "no component with one component dependent, ≤ "
-       (Math/round (* 100 (double max-size))) "% of its size")]
+  [rule setting]
+  (if-let [text (dependency-rule-texts rule)]
+    (text setting)
     [(name rule) ""]))
 
 (defn- dependency-rows
