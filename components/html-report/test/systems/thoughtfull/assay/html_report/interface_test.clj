@@ -122,3 +122,17 @@
   (is (= ["Violations" "Functions" "Dependencies" "Bricks" "Thresholds"]
         (map second (re-seq #"<h2[^>]*>([^<]+)</h2>"
                       (html-report/render report))))))
+
+(deftest comparison-section-order-test
+  (is (= ["Violations" "Resolved" "Functions" "Dependencies" "Changed bricks"
+          "Bricks" "Thresholds"]
+        (map second
+          (re-seq #"<h2[^>]*>([^<]+)</h2>"
+            (html-report/render
+              (assoc (assoc-in report [:violations 0 :status] :new)
+                :comparison
+                {:base-ref "main" :base-rev "0123456789ab"
+                 :changed-bricks #{"a"} :base-metrics {}
+                 :resolved [{:brick {:name "z" :type :component}
+                             :metric :forms
+                             :message "fixed"}]})))))))

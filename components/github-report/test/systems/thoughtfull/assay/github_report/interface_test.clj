@@ -111,3 +111,17 @@
                          :level :warning
                          :message "9 is too high"}]}))
     "a violation of a whole brick is anchored to the brick's deps.edn"))
+
+(deftest comparison-section-order-test
+  (is (= ["Violations" "Resolved" "Functions" "Dependencies" "Changed bricks"
+          "Bricks"]
+        (map second (re-seq #"(?m)^### (.*)$"
+                      (github-report/summary
+                        (-> compared
+                          (assoc-in [:bricks 0 :functions]
+                            [{:name "f" :complexity 1 :depth 1 :forms 5
+                              :params 0}])
+                          (assoc :edges [{:from "a" :to "b"}])
+                          (assoc-in [:comparison :resolved]
+                            [{:brick {:name "z" :type :component}
+                              :metric :forms :message "fixed"}]))))))))

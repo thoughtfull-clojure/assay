@@ -442,14 +442,15 @@ import('https://cdn.jsdelivr.net/npm/mermaid@11.17.2/dist/mermaid.esm.min.mjs')
      (list " · compared with " [:code base-ref] " (merge-base "
        [:code (subs base-rev 0 (min 12 (count base-rev)))] ")"))])
 
-(defn- comparison-sections
+(defn- changed-bricks-section
   [{:keys [bricks comparison]}]
   (when comparison
-    (list
-      (when (seq (:resolved comparison))
-        (list [:h2 "Resolved"] (resolved-table (:resolved comparison))))
-      [:h2 "Changed bricks"]
-      (changes-table bricks comparison))))
+    (list [:h2 "Changed bricks"] (changes-table bricks comparison))))
+
+(defn- resolved-section
+  [{:keys [comparison]}]
+  (when (seq (:resolved comparison))
+    (list [:h2 "Resolved"] (resolved-table (:resolved comparison)))))
 
 (defn- sections
   [{:keys [bricks violations comparison] :as report}]
@@ -457,12 +458,13 @@ import('https://cdn.jsdelivr.net/npm/mermaid@11.17.2/dist/mermaid.esm.min.mjs')
     (summary-tiles report)
     [:h2 "Violations"]
     (violations-table violations comparison (:hidden-warnings report))
-    (comparison-sections report)
+    (resolved-section report)
     [:h2 "Functions"]
     (functions-table bricks violations 15)
     (legend metrics/function-metrics)
     [:h2 "Dependencies"]
     (dependencies-section report)
+    (changed-bricks-section report)
     [:h2 "Bricks"]
     (metrics-table bricks violations)
     (legend metrics/columns)
