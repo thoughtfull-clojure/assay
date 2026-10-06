@@ -59,8 +59,10 @@ could make separately. To reduce it:
 
 - Extract a predicate with a name for a compound condition, such as
   `(and (seq xs) (not (:disabled opts)) ...)`.
-- Replace a long `cond` or `case` that picks behavior with a map lookup or
-  a multimethod, so each case lives in its own place.
+- Replace a long `cond` that picks behavior with a map lookup, a `case`, or
+  a multimethod, so each case lives in its own place. A `case` counts as
+  one decision however many clauses it has, because its tests are
+  constants dispatched in one step.
 - Validate inputs in one function and do the work in another, rather than
   checking at each step.
 - Use `cond->`, `some->`, and `when-let` where they fit. They don't remove

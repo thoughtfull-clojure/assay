@@ -102,8 +102,11 @@
   (testing "cond counts clauses, less a final :else"
     (is (= 4 (complexity "(defn f [x] (cond (a) 1 (b) 2 (c) 3))")))
     (is (= 3 (complexity "(defn f [x] (cond (a) 1 (b) 2 :else 3))"))))
-  (testing "case counts clauses, not the default"
-    (is (= 3 (complexity "(defn f [x] (case x 1 :a 2 :b :c))"))))
+  (testing "case counts once, however many clauses, plus its bodies"
+    (is (= 2 (complexity "(defn f [x] (case x 1 :a 2 :b :c))")))
+    (is (= 2 (complexity
+               "(defn f [x] (case x 1 :a 2 :b 3 :c 4 :d (5 6 7) :e :f))")))
+    (is (= 3 (complexity "(defn f [x] (case x 1 (when x :a) :b))"))))
   (testing "condp counts clauses"
     (is (= 3 (complexity "(defn f [x] (condp = x 1 :a 2 :b :c))"))))
   (testing "and and or count each argument after the first"

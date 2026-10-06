@@ -30,8 +30,10 @@ assay reports every function that breaks a rule, with its location.
 | Parameters | Positional parameters of the widest arity |
 
 A function's cyclomatic complexity is 1 plus its decision points, such as
-`if`, `when`, each `cond` and `case` clause, each extra argument to `and`
-and `or`, each `catch`, and each extra arity.
+`if`, `when`, each `cond` clause, each extra argument to `and` and `or`,
+each `catch`, and each extra arity. A `case` counts once however many
+clauses it has, since it dispatches on constants like a lookup table; only
+decisions inside its bodies add more.
 
 Nesting depth counts nested collections, except that binding values in
 `let`, `loop`, `for`, and similar forms start again at depth 1. Binding

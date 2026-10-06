@@ -435,8 +435,10 @@
 ;;
 ;; - if, if-not, if-let, if-some, when, when-not, when-let, when-some,
 ;;   when-first, while: 1
+;; - case: 1, however many clauses. Its tests are constants dispatched in
+;;   one step, so it reads like a lookup table; only its bodies add more.
 ;; - cond: 1 per clause, less 1 for a final :else (or other keyword or true)
-;; - condp, case, cond->, cond->>: 1 per clause
+;; - condp, cond->, cond->>: 1 per clause
 ;; - and, or: 1 per argument after the first
 ;; - catch: 1
 ;; - :when and :while in for and doseq: 1 each
@@ -481,9 +483,9 @@
   points."
   (merge
     (zipmap ["if" "if-not" "if-let" "if-some" "when" "when-not" "when-let"
-             "when-some" "when-first" "while" "catch"]
+             "when-some" "when-first" "while" "catch" "case"]
       (repeat (constantly 1)))
-    (zipmap ["case" "cond->" "cond->>"]
+    (zipmap ["cond->" "cond->>"]
       (repeat #(quot (count (rest %)) 2)))
     (zipmap ["and" "or"]
       (repeat #(max 0 (dec (count %)))))
