@@ -138,6 +138,14 @@
   [measurements k]
   (core/outliers measurements k))
 
+(defn detail
+  "What explains metric k's value in a brick's metrics, for a tooltip: the
+  counts behind a ratio, such as \"16 of 41 public interface definitions
+  can throw\", which side of the main sequence a component is on, or the
+  kinds of isolation hazards. nil when there is nothing to add."
+  [k metrics]
+  (core/detail k metrics))
+
 (defn label
   "The display label of a violation, or of any map of :metric. A :label in
   the map wins, then the registry's label, then the metric's name."

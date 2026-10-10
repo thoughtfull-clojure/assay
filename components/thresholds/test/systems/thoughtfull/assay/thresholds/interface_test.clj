@@ -207,6 +207,46 @@
           (check {} [(measurement "x" {:cohesion 0.4
                                        :workspace-references 10})])))))
 
+(deftest rows-test
+  (let [a {:name "a" :type :component}
+        b {:name "b" :type :component}
+        f (fn [metric level value line]
+            {:kind :function :metric metric :brick a :subject "a.core/f"
+             :level level :value value :limit 1 :function-line 3
+             :location {:file "a.clj" :line line :name "f"}})
+        rows (thresholds/rows
+               [(f :function-depth :warning 9 7)
+                (f :function-complexity :error 12 3)
+                {:metric :library-spread :brick a :subject "next.jdbc"
+                 :level :warning :value 5 :limit 3
+                 :location {:file "a.clj" :line 1}}
+                {:metric :library-spread :brick b :subject "next.jdbc"
+                 :level :warning :value 5 :limit 3
+                 :location {:file "b.clj" :line 1}}
+                {:metric :cohesion :brick b :level :warning :value 0.1
+                 :limit 0.5}])]
+    (is (= [[:function-rows :error ["a"] [{:file "a.clj" :line 3 :name "f"}]]
+            [:cohesion :warning ["b"] []]
+            [:library-spread :warning ["a" "b"]
+             [{:file "a.clj" :line 1} {:file "b.clj" :line 1}]]]
+          (map (juxt :group :level (comp #(map :name %) :bricks) :locations)
+            rows))
+      "a function's violations are one row, at its definition, with the
+      worst level; a library's spread is one row across its bricks")
+    (is (= [:complexity :modularity :io] (map :section rows))
+      "a row's section is its metric's; errors first, then by how far
+      past the limit")))
+
+(deftest threshold-text-test
+  (let [config (thresholds/merge-config
+                 {:complexity {:function-depth {:error 12}}})]
+    (is (= "warning > 8, error > 12"
+          (thresholds/describe config :function-depth)))
+    (is (= "warning < 0.5" (thresholds/describe config :cohesion)))
+    (is (= "warning > mean + 2σ"
+          (thresholds/describe config :assertions-per-test)))
+    (is (nil? (thresholds/describe config :forms)))))
+
 (deftest worse-level-test
   (is (= :error (thresholds/worse-level :warning :error)))
   (is (= :warning (thresholds/worse-level nil :warning)))

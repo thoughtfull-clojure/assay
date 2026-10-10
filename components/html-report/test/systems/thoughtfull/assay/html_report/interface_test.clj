@@ -133,7 +133,16 @@
                   {:library "clojure.tools.cli" :bricks ["x"]}]))]
     (is (str/includes? html
           (str "<td><code>next.jdbc</code></td><td class=\"num\">2</td>"
-            "<td>a, b</td>")))
+            "<td><span class=\"badge status\">allowed</span></td>"
+            "<td>a, b</td>"))
+      "a library in :allow is marked allowed")
+    (is (str/includes?
+          (html-report/render
+            (assoc report :libraries
+              [{:library "java-time" :bricks ["a" "b" "c" "d"]}]))
+          (str "<td class=\"num\">4</td><td><span class=\"badge warning\">"
+            "warning</span></td>"))
+      "a library spread past the limit is marked")
     (is (not (str/includes? html "clojure.tools.cli"))
       "libraries only one brick requires aren't listed")))
 
@@ -168,7 +177,11 @@
       cohesion")))
 
 (deftest thresholds-table-test
-  (let [html (html-report/render report)]
+  (let [html (second (str/split (html-report/render
+                                  (assoc report :configured
+                                    {:complexity {:function-complexity
+                                                  {:warning 8}}}))
+                       #"<h2>Thresholds</h2>"))]
     (is (= ["Complexity" "Modularity" "I/O and mutability"]
           (map second
             (re-seq #"<td class=\"cat cat-[a-z]+\" rowspan=\"\d+\">([^<]+)</td>"
@@ -176,17 +189,28 @@
       "grouped by category, in section order; a metric that is off has no row")
     (is (str/includes? html
           (str "<td class=\"cat cat-complexity\" rowspan=\"1\">Complexity</td>"
-            "<td>Complex functions</td>"))
-      "a category's cell spans its rows")))
+            "<td>Complex functions <span class=\"badge status\">configured"
+            "</span></td>"))
+      "a category's cell spans its rows; a configured metric is marked")
+    (is (str/includes? html "<td></td><td class=\"num\">1</td></tr>")
+      "the number of violations")))
 
 (deftest section-colors-test
   (let [html (html-report/render report)]
     (is (str/includes? html
-          "<td class=\"cat cat-complexity\">Complex functions</td><td>12 is above")
-      "a violation's metric is tinted with its section's color")
+          (str "<td class=\"cat cat-complexity\" rowspan=\"1\">Complexity</td>"
+            "<td><a href=\"#violations-function-rows\">Complex functions</a></td>"
+            "<td class=\"num error\">1</td><td class=\"num\">0</td>"))
+      "the summary counts each metric's violations, tinted by category,
+      linked to them")
     (is (str/includes? html
-          "<div class=\"section cat-dependencies\"><h2>Dependencies</h2>")
-      "each section, its heading and table, has its color")))
+          (str "<div class=\"section cat-dependencies\" id=\"dependencies\">"
+            "<h2>Dependencies</h2>"))
+      "each section, its heading and table, has its color")
+    (is (str/includes? html
+          (str "<details class=\"legend violations\" id=\"violations-function-rows\">"
+            "<summary>Functions: 1 error</summary>"))
+      "a section lists its violations by metric")))
 
 (deftest legend-code-test
   (is (str/includes? (html-report/render report)
@@ -257,7 +281,7 @@
                       :limit 150
                       :message (str "forms " (+ 151 i))})
         html (html-report/render (assoc report :violations violations))
-        [shown more] (str/split html #"<summary>2 more violations</summary>")]
+        [shown more] (str/split html #"<summary>2 more</summary>")]
     (is (some? more))
     (is (< (str/index-of shown "forms 172") (str/index-of shown "forms 153")))
     (is (str/includes? more "forms 152"))

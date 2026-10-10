@@ -47,7 +47,9 @@
   the values of :function, :finding, and :count metrics added to
   :metrics, and :violations, each a map of :metric, :section, :kind,
   :direction, :brick, :value, :limit, :level, :message, and when known
-  :subject, :location, :stats, and :historical?."
+  :subject, :location, :stats, and :historical?; a function's violation
+  also has :function-line, the line it is defined on, where :location is
+  at the metric's line (such as the deepest form, for depth)."
   [config measurements findings]
   (core/check config measurements findings))
 
@@ -55,6 +57,30 @@
   "The more severe of two levels: :error, :warning, or nil for none."
   [a b]
   (core/worse-level a b))
+
+(defn threshold-text
+  "Threshold t of metric (a registry entry) in short notation, the values
+  it flags, such as \"> 10\", \"< 0.5\", or \"> mean + 2σ\"; nil for nil."
+  [metric t]
+  (core/threshold-text metric t))
+
+(defn describe
+  "Metric k's thresholds in merged config, such as \"warning > 8, error >
+  10\", or nil when it has none."
+  [config k]
+  (core/describe config k))
+
+(defn rows
+  "Violations grouped into the rows reports show, one per finding: a
+  function's violations across its metrics, a library's spread across its
+  bricks, and a duplicate's copies are one row each. Each row is a map of
+  :group (the metric key, or :function-rows for a function's row), :section,
+  :metric (its first violation's), :subject, :value, :level (the worst),
+  :status (new if any violation is), :bricks, :locations, and
+  :violations. Rows are most severe first: errors, then by how far past
+  the limit."
+  [violations]
+  (core/rows violations))
 
 (defn by-severity
   "Violations sorted most severe first: errors before warnings, then by how

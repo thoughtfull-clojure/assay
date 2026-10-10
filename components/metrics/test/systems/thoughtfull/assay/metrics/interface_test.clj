@@ -155,6 +155,7 @@
                       :assertions-per-test nil
                       :forms-per-test nil
                       :isolation-hazards 0
+                      :hazard-kinds {}
                       :test-ratio 0.0}
             :tests []
             :sources [{:file file :ns (quote c) :requires [] :forms 22

@@ -90,6 +90,7 @@ h3 { font-size: 15px; margin: 24px 0 8px; }
 .scroll { overflow-x: auto; border: 1px solid var(--border); border-radius: 8px; }
 table { border-collapse: collapse; width: 100%; background: var(--surface); }
 th, td { padding: 8px 12px; text-align: left; border-bottom: 1px solid var(--border); }
+td { vertical-align: top; }
 tr:last-child td { border-bottom: none; }
 th {
   font-size: 13px; font-weight: 600; color: var(--muted);
@@ -118,7 +119,13 @@ p.none { color: var(--muted); }
 tr.average td { font-weight: 600; border-top: 2px solid var(--border); }
 details.legend { margin-top: 12px; }
 details.dependency-table .scroll,
-details.more-violations .scroll { margin-top: 12px; }
+details.more-violations .scroll,
+details.violations .scroll { margin-top: 12px; }
+details.violations summary { color: var(--text); font-size: 14px; }
+.threshold { color: var(--text); }
+span.error { color: var(--error); font-weight: 600; }
+span.warning { color: var(--warning); }
+a { color: inherit; }
 pre.mermaid { background: none; margin: 0; text-align: center; }
 pre.mermaid:not([data-processed]) { visibility: hidden; height: 0; }
 .graph { position: relative; }
@@ -206,10 +213,17 @@ details.legend dd code {
                 [:tr {:class (:class (meta row))} (map td row)])]]]))
 
 (defn- metric-headers
-  [registry]
-  (map (fn [{:keys [label description]}]
-         [{:class "num" :title description} label])
-    registry))
+  "Column headers, each with its description and thresholds as a tooltip."
+  [columns config]
+  (map (fn [{:keys [label description keys]}]
+         [{:class "num"
+           :title (str/join "\n"
+                    (cons description
+                      (keep #(some->> (thresholds/describe config %)
+                               (str "Threshold: "))
+                        keys)))}
+          label])
+    columns))
 
 (defn- brick-cell
   "A brick's name and type, each kept on one line, and an optional tag."
@@ -218,9 +232,6 @@ details.legend dd code {
    (list [:span {:class "brick-name"} (:name brick)] " "
      [:span {:class "type"} (name (:type brick))]
      (when tag (list " " (badge "status" tag))))))
-
-(def ^:private status-order
-  {:new 0 nil 0 :indirect 1 :existing 2})
 
 ;; Violations
 
@@ -246,11 +257,6 @@ details.legend dd code {
   "How many violations to list before collapsing the rest."
   20)
 
-(defn- by-severity
-  "Violations a change introduced first, each group most severe first."
-  [violations]
-  (sort-by (comp status-order :status) (thresholds/by-severity violations)))
-
 (defn- section-class
   [section]
   (str "cat-" (name section)))
@@ -265,38 +271,185 @@ details.legend dd code {
   (metric-label-cell (metrics/violation-section violation)
     (metrics/label violation)))
 
-(defn- violation-rows
-  [violations status?]
-  (table (cond-> ["Level" "Brick" "Metric" "Detail" "Location"]
+(defn- category-group
+  "A section's rows, the first starting with a tinted category cell that
+  spans them all."
+  [{:keys [key label]} rows]
+  (cons (cons [:td {:class (str "cat " (section-class key))
+                    :rowspan (count rows)}
+               label]
+          (:cells (first rows)))
+    (map :cells (rest rows))))
+
+(defn- category-rows
+  "Rows grouped by section, in the report's order."
+  [rows]
+  (let [by-section (group-by :section rows)]
+    (mapcat #(when-let [group (by-section (:key %))]
+               (category-group % group))
+      metrics/sections)))
+
+(defn- status-badge
+  [status]
+  (badge (str "status " (name status)) (name status)))
+
+(defn- bricks-cell
+  [bricks]
+  (if (= 1 (count bricks))
+    (brick-cell (first bricks))
+    (interpose ", " (map #(vector :span {:class "brick-name"} (:name %))
+                      bricks))))
+
+(defn- row-detail
+  "What a row of violations says: each of a function's metrics past its
+  limit, how widely a library is required, or what a violation says."
+  [{:keys [group violations value subject] :as row}]
+  (case group
+    :function-rows (interpose ", "
+                     (for [{:keys [metric value limit location level]} violations
+                           :let [m (metrics/metric metric)
+                                 line (:line (first (:locations row)))]]
+                       [:span {:class (name level)}
+                        (name (:function-key m)) " " value " "
+                        (thresholds/threshold-text m limit)
+                        (when (not= line (:line location))
+                          (str " (line " (:line location) ")"))]))
+    :library-spread (list [:code subject] " is required by " value
+                      " bricks, more than " (:limit (first violations)))
+    :duplicate-code (str value " forms in each, the same code"
+                      " (more than " (:limit (first violations)) ")")
+    (:message (first violations))))
+
+(defn- locations-cell
+  [locations]
+  (interpose [:br] (map location locations)))
+
+(defn- row-table
+  "Rows of violations (from thresholds/rows), with a metric column when
+  they are of different metrics and a status column when a comparison
+  left existing ones in."
+  [rows {:keys [metric? status?]}]
+  (table (cond-> ["Level" "Brick"]
+           metric? (conj "Metric")
+           :always (conj "Detail" "Location")
            status? (conj "Status"))
-    (for [{:keys [brick level message status] :as v} violations]
-      (cond-> [(level-badge level)
-               (brick-cell brick)
-               (violation-metric-cell v)
-               message
-               (location (:location v))]
-        status? (conj (badge (str "status " (name status))
-                        (name status)))))))
+    (for [{:keys [level bricks locations status] :as row} rows]
+      (cond-> [(level-badge level) (bricks-cell bricks)]
+        metric? (conj (if (= :function-rows (:group row))
+                        (metric-label-cell :complexity "Functions")
+                        (violation-metric-cell row)))
+        :always (conj (row-detail row) (locations-cell locations))
+        status? (conj (status-badge status))))))
 
-(defn- more-violations
-  "The violations past the first few, collapsed."
-  [more status?]
-  (when (seq more)
-    [:details {:class "legend more-violations"}
-     [:summary (count more) " more "
-      (if (= 1 (count more)) "violation" "violations")]
-     (violation-rows more status?)]))
+(defn- collapsed-rows
+  "Rows, past the first few collapsed."
+  [rows opts]
+  (let [[shown more] (split-at shown-violations rows)]
+    (list (row-table shown opts)
+      (when (seq more)
+        [:details {:class "legend more-violations"}
+         [:summary (count more) " more"]
+         (row-table more opts)]))))
 
-(defn- violations-table
-  "The violations, most severe first, with a status column when a
-  comparison left existing ones in. Past the first few, the rest collapse."
-  [{:keys [violations comparison hidden-warnings hidden-existing]}]
+(defn- level-counts
+  "How many of rows are errors and warnings, as text."
+  [rows]
+  (let [{:keys [error warning]} (frequencies (map :level rows))]
+    (str/join ", "
+      (remove nil?
+        [(when error (str error (if (= 1 error) " error" " errors")))
+         (when warning (str warning (if (= 1 warning) " warning"
+                                      " warnings")))]))))
+
+(defn- group-id
+  "The id of a group's violations. Library spread's are in the shared
+  libraries table."
+  [group]
+  (if (= :library-spread group)
+    "shared-libraries"
+    (str "violations-" (name group))))
+
+(defn- group-label
+  [group]
+  (if (= :function-rows group) "Functions" (metrics/label {:metric group})))
+
+(defn- section-violations
+  "A section's rows of violations, a collapsed group for each metric (and
+  one for functions, across their metrics), in column order. Library
+  spread is left to the shared libraries table, which marks it."
+  [{:keys [key columns]} rows status?]
+  (let [groups (group-by :group (filter #(= key (:section %)) rows))]
+    (for [group (cons :function-rows (remove #{:library-spread}
+                                       (mapcat :keys columns)))
+          :let [rs (groups group)]
+          :when (seq rs)]
+      [:details {:class "legend violations" :id (group-id group)}
+       [:summary (group-label group) ": " (level-counts rs)]
+       (collapsed-rows rs {:status? status?})])))
+
+(defn- metric-rows
+  "Rows counted under each metric, with the level of the row's worst
+  violation of it: a function's row under each metric it is past."
+  [rows]
+  (for [row rows
+        [metric vs] (group-by :metric (:violations row))]
+    [metric (assoc row :level (reduce thresholds/worse-level nil
+                                (map :level vs)))]))
+
+(defn- count-cell
+  "A count of violations, tinted with level when there are any."
+  [level n]
+  [:td {:class (str "num" (when n (str " " (name level))))} (or n 0)])
+
+(defn- metric-link
+  "A metric's label, linked to its violations: a function metric's are
+  with the function rows."
+  [k]
+  [:a {:href (str "#" (group-id (if (= :function (:kind (metrics/metric k)))
+                                  :function-rows
+                                  k)))}
+   (metrics/label {:metric k})])
+
+(defn- summary-line
+  "A metric's row of the summary grid, given its introduced rows and the
+  number resolved, or nil when it has neither."
+  [k rows fixed comparison]
+  (let [{:keys [error warning]} (frequencies (map :level rows))]
+    (when (or (seq rows) fixed)
+      {:section (metrics/violation-section {:metric k})
+       :cells (cond-> [(metric-link k) (count-cell :error error)
+                       (count-cell :warning warning)]
+                comparison (conj [:td {:class "num"} (or fixed 0)]))})))
+
+(defn- summary-grid
+  "A row for each metric with violations, in report order, counting the
+  rows a change introduced (or all, without a comparison), and with a
+  comparison, those it resolved. Each links to the metric's violations."
+  [rows resolved comparison]
+  (let [introduced (group-by first
+                     (filter (comp introduced? second) (metric-rows rows)))
+        fixed (frequencies (map :metric resolved))
+        lines (keep (fn [{:keys [key]}]
+                      (summary-line key (map second (introduced key))
+                        (fixed key) comparison))
+                metrics/metrics)]
+    (when (seq lines)
+      (table (cond-> ["Category" "Metric" [{:class "num"} "Errors"]
+                      [{:class "num"} "Warnings"]]
+               comparison (conj [{:class "num"} "Resolved"]))
+        (category-rows lines)))))
+
+(defn- violations-summary
+  "The summary grid, and with a comparison, a list of the new violations."
+  [{:keys [comparison hidden-warnings hidden-existing]} rows]
   (let [status? (and comparison (nil? hidden-existing))
-        [shown more] (split-at shown-violations (by-severity violations))]
+        new (filter introduced? rows)]
     (list
-      (if (empty? violations)
-        [:p {:class "none"} (none-text comparison hidden-warnings)]
-        (list (violation-rows shown status?) (more-violations more status?)))
+      (or (summary-grid rows (:resolved comparison) comparison)
+        [:p {:class "none"} (none-text comparison hidden-warnings)])
+      (when (and comparison (seq new))
+        (list [:h3 "New violations"]
+          (collapsed-rows new {:metric? true :status? status?})))
       (hidden-existing-key hidden-existing))))
 
 (defn- resolved-table
@@ -370,6 +523,13 @@ details.legend dd code {
              "(" (when (> head base) "+") (metrics/format-value k (- head base))
              ")"]))
 
+(defn- detail-flags
+  "A column's flags with what explains each of its values first."
+  [flags metrics {:keys [keys]}]
+  (if-let [details (seq (keep #(metrics/detail % metrics) keys))]
+    (update flags :messages #(into (vec details) %))
+    flags))
+
 (defn- change-flags
   "A column's flags with what each changed metric was in the base."
   [flags changes]
@@ -399,7 +559,7 @@ details.legend dd code {
   shown, with how much each value changed, and a key counts the rest. A
   key explains any outlined value."
   [{:keys [columns components-only] :as section} all-bricks violations
-   comparison]
+   comparison config]
   (let [bricks (metrics/section-measurements section all-bricks)
         noun (if components-only "component" "brick")
         flagged (flagged-cells violations
@@ -415,7 +575,7 @@ details.legend dd code {
                             columns))
                     shown)]
     (list
-      (table (cons "Brick" (metric-headers columns))
+      (table (cons "Brick" (metric-headers columns config))
         (concat
           (for [{:keys [brick] :as m} shown
                 :let [brick-name (:name brick)
@@ -424,6 +584,7 @@ details.legend dd code {
               (for [column columns
                     :let [changes (deltas column base (:metrics m))]]
                 (metric-cell (-> (column-flags flagged brick-name column)
+                               (detail-flags (:metrics m) column)
                                (outlier-flags outliers brick-name column)
                                (change-flags changes))
                   (list (metrics/column-text column (:metrics m))
@@ -454,12 +615,17 @@ details.legend dd code {
     (str/split s #"`" -1)))
 
 (defn- legend
-  "A collapsed list explaining each entry of a metric registry."
-  [entries]
+  "A collapsed list explaining each column, with its thresholds."
+  [columns config]
   [:details {:class "legend"}
    [:summary "What these metrics mean"]
-   [:dl (for [{:keys [label explanation]} entries]
-          (list [:dt label] [:dd (inline-code explanation)]))]])
+   [:dl (for [{:keys [label explanation keys]} columns
+              :let [thresholds (keep #(thresholds/describe config %) keys)]]
+          (list [:dt label]
+            [:dd (inline-code explanation)
+             (when (seq thresholds)
+               (list " " [:span {:class "threshold"}
+                          "Threshold: " (str/join "; " thresholds) "."]))]))]])
 
 ;; Dependencies
 
@@ -592,29 +758,35 @@ function viewer(graph) {
        (dependencies-table bricks edges)]
       [:script {:type "module"} (->Raw mermaid-script)])))
 
+(defn- spread-level
+  "The level a library spread across n bricks reaches, given the
+  :library-spread settings, or :allowed."
+  [{:keys [allow] :as settings} library n]
+  (if (contains? (set (map str allow)) library)
+    :allowed
+    (some #(when-some [t (get settings %)] (when (> n t) %))
+      [:error :warning])))
+
 (defn- shared-libraries-table
-  "Libraries that more than one brick requires, most spread first."
-  [{:keys [libraries]}]
+  "Libraries that more than one brick requires, most spread first, with
+  the level of those spread past the :library-spread limit."
+  [{:keys [libraries thresholds]}]
   (when-let [shared (seq (filter #(< 1 (count (:bricks %))) libraries))]
-    (list
-      [:h3 "Shared libraries"]
-      (table ["Library" [{:class "num"} "Bricks"] "Required by"]
-        (for [{:keys [library bricks]} shared]
-          [[:code library]
-           [:td {:class "num"} (count bricks)]
-           (str/join ", " bricks)])))))
+    (let [settings (thresholds/settings thresholds :library-spread)]
+      (list
+        [:h3 {:id "shared-libraries"} "Shared libraries"]
+        (table ["Library" [{:class "num"} "Bricks"] "Spread" "Required by"]
+          (for [{:keys [library bricks]} shared
+                :let [level (spread-level settings library (count bricks))]]
+            [[:code library]
+             [:td {:class "num"} (count bricks)]
+             (case level
+               nil ""
+               :allowed (badge "status" "allowed")
+               (level-badge level))
+             (str/join ", " bricks)]))))))
 
 ;; Thresholds
-
-(defn- threshold-text
-  "A threshold in short notation, the values it flags, such as \"> 10\"."
-  [{:keys [direction]} t]
-  (let [op (if (= :max direction) "> " "< ")]
-    (cond
-      (nil? t) ""
-      (map? t) (str op "mean " (if (= :max direction) "+ " "− ")
-                 (:std-devs t) "σ")
-      :else (str op t))))
 
 (defn- applies-to
   "Which bricks, or functions of which bricks, a metric checks."
@@ -629,52 +801,44 @@ function viewer(graph) {
 
 (defn- threshold-rows
   "A row map for each metric with settings: its :section, and its :cells
-  after the category."
-  [config]
+  after the category. A metric set in the config, rather than left to
+  its defaults, is marked configured."
+  [config configured counts]
   (for [{:keys [key]} metrics/metrics
         :let [{:keys [section options] :as metric} (metrics/metric key)
               settings (thresholds/settings config key)]
         :when settings]
     {:section section
-     :cells [(:label metric)
+     :cells [(list (:label metric)
+               (when (contains? (get configured section) key)
+                 (list " " (badge "status" "configured"))))
              (applies-to metric)
-             [:td {:class "num"} (threshold-text metric (:warning settings))]
-             [:td {:class "num"} (threshold-text metric (:error settings))]
+             [:td {:class "num"}
+              (thresholds/threshold-text metric (:warning settings))]
+             [:td {:class "num"}
+              (thresholds/threshold-text metric (:error settings))]
              (str/join "; " (map option-text
-                              (select-keys settings (keys options))))]}))
-
-(defn- category-group
-  "A section's rows, the first starting with a tinted category cell that
-  spans them all."
-  [{:keys [key label]} rows]
-  (cons (cons [:td {:class (str "cat " (section-class key))
-                    :rowspan (count rows)}
-               label]
-          (:cells (first rows)))
-    (map :cells (rest rows))))
-
-(defn- category-rows
-  "Rows grouped by section, in the report's order."
-  [rows]
-  (let [by-section (group-by :section rows)]
-    (mapcat #(when-let [group (by-section (:key %))]
-               (category-group % group))
-      metrics/sections)))
+                              (select-keys settings (keys options))))
+             [:td {:class "num"} (counts key 0)]]}))
 
 (defn- thresholds-section
-  "Every metric with thresholds in one table, grouped by category."
-  [{:keys [thresholds]}]
+  "Every metric with thresholds in one table, grouped by category, like
+  the config, with how many violations each has."
+  [{:keys [thresholds configured]} rows]
   (list
     [:h2 "Thresholds"]
     (table ["Category" "Metric" "Applies to" [{:class "num"} "Warning"]
-            [{:class "num"} "Error"] "Options"]
-      (category-rows (threshold-rows thresholds)))))
+            [{:class "num"} "Error"] "Options" [{:class "num"} "Violations"]]
+      (category-rows (threshold-rows thresholds configured
+                       (frequencies (map first (metric-rows rows))))))))
 
 ;; Page
 
 (defn- summary-tiles
-  [{:keys [bricks violations comparison hidden-warnings]}]
-  (let [counts (frequencies (map :level (filter introduced? violations)))
+  "Counts of bricks and of the rows of violations a change introduced (or
+  all, without a comparison)."
+  [{:keys [bricks comparison hidden-warnings]} rows]
+  (let [counts (frequencies (map :level (filter introduced? rows)))
         qualifier (if comparison "new " "")]
     [:div {:class "tiles"}
      (tile "" (count bricks) "bricks")
@@ -704,22 +868,28 @@ function viewer(graph) {
     (list [:h2 "Resolved"] (resolved-table (:resolved comparison)))))
 
 (defn- sections
-  [{:keys [bricks violations comparison] :as report}]
-  (list
-    (summary-tiles report)
-    [:h2 "Violations"]
-    (violations-table report)
-    (resolved-section report)
-    (for [{:keys [key label columns] :as section} metrics/sections]
-      [:div {:class (str "section " (section-class key))}
-       [:h2 label]
-       (when (= :dependencies key)
-         (dependencies-section report))
-       (section-table section bricks violations comparison)
-       (when (= :io key)
-         (shared-libraries-table report))
-       (legend columns)])
-    (thresholds-section report)))
+  "The summary, then a section for each category: its table, legend, and
+  violations. Then the thresholds."
+  [{:keys [bricks violations comparison thresholds hidden-existing]
+    :as report}]
+  (let [rows (thresholds/rows violations)
+        status? (and comparison (nil? hidden-existing))]
+    (list
+      (summary-tiles report rows)
+      [:h2 "Violations"]
+      (violations-summary report rows)
+      (resolved-section report)
+      (for [{:keys [key label columns] :as section} metrics/sections]
+        [:div {:class (str "section " (section-class key)) :id (name key)}
+         [:h2 label]
+         (when (= :dependencies key)
+           (dependencies-section report))
+         (section-table section bricks violations comparison thresholds)
+         (when (= :io key)
+           (shared-libraries-table report))
+         (legend columns thresholds)
+         (section-violations section rows status?)])
+      (thresholds-section report rows))))
 
 (defn render
   [report]

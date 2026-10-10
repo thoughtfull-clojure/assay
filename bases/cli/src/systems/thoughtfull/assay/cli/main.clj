@@ -135,18 +135,21 @@
         (delete-tree dir)))))
 
 (defn report
-  "Measure the workspace at workspace-dir and check it against config,
-  comparing with the merge-base of base-ref when it is given. Returns a
-  report map for the report components."
-  [workspace-dir config base-ref]
+  "Measure the workspace at workspace-dir and check it against the
+  configured thresholds, merged over the defaults, comparing with the
+  merge-base of base-ref when it is given. Returns a report map for the
+  report components, with :thresholds, the merged config, and
+  :configured, the config as given."
+  [workspace-dir configured base-ref]
   (let [root (.getCanonicalFile (io/file workspace-dir))
-        config (thresholds/merge-config config)
+        config (thresholds/merge-config configured)
         head (measure root config (commits root config))]
     (-> (if base-ref
           (compare-with-base root config base-ref head)
           head)
       (assoc :workspace (.getName root)
-        :generated-at (str (java.time.Instant/now))))))
+        :generated-at (str (java.time.Instant/now))
+        :configured configured))))
 
 (defn- failed?
   "True if report has an error-level violation within scope, \"new\" or

@@ -228,6 +228,7 @@
       {:brick brick
        :value value
        :subject (metrics/function-id function)
+       :function-line (:line function)
        :location {:file (:file function)
                   :line (get function (or line-key :line))
                   :name (:name function)}}
@@ -320,6 +321,8 @@
   [a b]
   (if (some #{:error} [a b]) :error (or a b)))
 
+;; Presentation
+
 (defn- excess
   "How far past its limit a violation's value is, relative to the limit, so
   metrics of different scales compare. 0 when either is unknown."
@@ -328,6 +331,85 @@
     (/ (Math/abs (double (- value limit)))
       (if (zero? limit) 1.0 (Math/abs (double limit))))
     0.0))
+
+(defn threshold-text
+  [{:keys [direction]} t]
+  (let [op (if (= :max direction) "> " "< ")]
+    (cond
+      (nil? t) nil
+      (map? t) (str op "mean " (if (= :max direction) "+ " "− ")
+                 (fmt (:std-devs t)) "σ")
+      :else (str op (fmt t)))))
+
+(defn describe
+  [config k]
+  (let [metric (metrics/metric k)
+        s (settings config k)]
+    (some->> levels
+      reverse
+      (keep #(when-let [t (threshold-text metric (get s %))]
+               (str (name %) " " t)))
+      seq
+      (str/join ", "))))
+
+(def ^:private status-rank
+  {:new 0 nil 0 :indirect 1 :existing 2})
+
+(defn- best-status
+  "The status of a row of violations: new if any is, then the least
+  settled."
+  [violations]
+  (first (sort-by status-rank (map :status violations))))
+
+(defn- row-key
+  "What groups violations into one row: a function's violations, across
+  its metrics; a library's spread, across its bricks; a duplicate, across
+  its copies. Any other violation is a row of its own."
+  [{:keys [kind metric brick subject] :as v}]
+  (case (if (= :function kind) :function metric)
+    :function [:function-rows (:name brick) subject]
+    (:library-spread :duplicate-code) [metric subject]
+    [:violation v]))
+
+(defn- function-location
+  "A function's location: at its definition, not at its deepest form."
+  [[{:keys [location function-line]}]]
+  (cond-> location
+    function-line (assoc :line function-line)))
+
+(defn- row
+  [[k] violations]
+  (let [{:keys [metric section subject value] :as v} (first violations)]
+    {:group (if (= :function-rows k) :function-rows metric)
+     :section (or section (metrics/violation-section v))
+     :metric metric
+     :subject subject
+     :value value
+     :level (reduce worse-level nil (map :level violations))
+     :status (best-status violations)
+     :bricks (vec (distinct (map :brick violations)))
+     :locations (if (= :function-rows k)
+                  [(function-location violations)]
+                  (vec (distinct (keep :location violations))))
+     :violations (vec violations)}))
+
+(defn- worst-first
+  "Rows in order of how far past the limit their worst violation is, in
+  its metric's direction, then by brick."
+  [rows]
+  (sort-by (juxt #(if (= :error (:level %)) 0 1)
+             #(- (reduce max 0 (map excess (filter (fn [v] (= (:level v)
+                                                             (:level %)))
+                                             (:violations %)))))
+             #(:name (first (:bricks %))))
+    rows))
+
+(defn rows
+  [violations]
+  (let [groups (group-by row-key violations)]
+    (worst-first
+      (for [k (distinct (map row-key violations))]
+        (row k (groups k))))))
 
 (defn by-severity
   [violations]

@@ -1142,6 +1142,7 @@
      :assertions-per-test (mean (map :assertions deftests))
      :forms-per-test (mean (map :forms deftests))
      :isolation-hazards (count (mapcat :hazards tests))
+     :hazard-kinds (frequencies (map :kind (mapcat :hazards tests)))
      :test-ratio (when (pos? source-forms)
                    (/ (reduce + (map :forms tests)) (double source-forms)))}))
 
@@ -1179,6 +1180,39 @@
      :tests (mapv #(select-keys % [:file :ns :requires :forms :tests :hazards
                                    :references])
               tests)}))
+
+(def ^:private hazard-names
+  {:with-redefs "with-redefs" :with-redefs-fn "with-redefs-fn"
+   :alter-var-root "alter-var-root" :sleep "Thread/sleep" :atom "atom"
+   :ref "ref" :agent "agent" :volatile "volatile" :dynamic "dynamic var"})
+
+(defn- of-text
+  [n total noun]
+  (when (and n total)
+    (str n " of " total " " noun)))
+
+(defn detail
+  [k {:keys [abstractness instability] :as metrics}]
+  (case k
+    :error-surface (some-> (of-text (:throwing-interface metrics)
+                             (:interface-definitions metrics)
+                             "public interface definitions")
+                     (str " can throw"))
+    :untested-interface (some-> (of-text (:untested-definitions metrics)
+                                  (:interface-definitions metrics)
+                                  "public interface definitions")
+                          (str " untested"))
+    :main-sequence-distance
+    (when (and abstractness instability
+            (not (zero? (+ abstractness instability -1.0))))
+      (if (neg? (+ abstractness instability -1.0))
+        "stable and concrete: hard to change, though much depends on it"
+        "abstract and unstable: an interface little depends on"))
+    :isolation-hazards
+    (when (seq (:hazard-kinds metrics))
+      (str/join ", " (for [[kind n] (sort-by (comp - val) (:hazard-kinds metrics))]
+                       (str n " " (hazard-names kind (name kind))))))
+    nil))
 
 (defn label
   [{:keys [metric label]}]
