@@ -65,10 +65,13 @@
   "A basis for write-pom whose top-level libraries are the project's Maven
   dependencies and its bricks'. write-pom keeps only top-level libraries
   and skips :local/root ones, which would leave out the bricks' own
-  dependencies."
-  [{:keys [libs]}]
+  dependencies. It keeps :mvn/repos, because with none write-pom writes
+  an empty <repositories/>, which HTML parsers such as cljdoc's don't
+  close, hiding the <scm> after it."
+  [{:keys [libs] :as basis}]
   (let [local? #(contains? (get libs %) :local/root)]
-    {:libs (into {}
+    {:mvn/repos (:mvn/repos basis)
+     :libs (into {}
              (for [[l coord] libs
                    :when (and (:mvn/version coord)
                            (every? local? (:dependents coord)))]
