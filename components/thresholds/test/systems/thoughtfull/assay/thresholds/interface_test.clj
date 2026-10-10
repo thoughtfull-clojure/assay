@@ -109,3 +109,12 @@
               :functions [{:name "f" :ns 'a.core :complexity 2}
                           {:name "f" :ns 'a.interface :complexity 1}]}])))
     "a function's subject is its namespace-qualified name"))
+
+(deftest by-severity-test
+  (is (= [:big-error :small-error :big-warning :no-value]
+        (map :id
+          (thresholds/by-severity
+            [{:id :no-value :level :warning}
+             {:id :big-warning :level :warning :value 40 :limit 10}
+             {:id :small-error :level :error :value 11 :limit 10}
+             {:id :big-error :level :error :value 0.1 :limit 0.5}])))))

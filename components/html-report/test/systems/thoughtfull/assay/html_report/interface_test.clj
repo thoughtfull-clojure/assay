@@ -202,3 +202,19 @@
       "every violation shown is new"))
   (is (str/includes? (html-report/render compared)
         "<p class=\"none\">No new violations.</p>")))
+
+(deftest collapsed-violations-test
+  (let [violations (for [i (range 22)]
+                     {:brick {:name (str "b" i) :type :component}
+                      :metric :forms
+                      :level :warning
+                      :value (+ 151 i)
+                      :limit 150
+                      :message (str "forms " (+ 151 i))})
+        html (html-report/render (assoc report :violations violations))
+        [shown more] (str/split html #"<summary>2 more violations</summary>")]
+    (is (some? more))
+    (is (< (str/index-of shown "forms 172") (str/index-of shown "forms 153")))
+    (is (str/includes? more "forms 152"))
+    (is (str/includes? more "forms 151"))
+    (is (not (str/includes? shown "forms 151")))))

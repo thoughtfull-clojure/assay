@@ -163,3 +163,27 @@
           "1 existing or indirect violation not shown"))
     (is (not (str/includes? summary "| Status |"))
       "every violation shown is new")))
+
+(defn- many-violations
+  [n]
+  (for [i (range n)]
+    {:brick {:name (str "b" i) :type :component}
+     :metric :forms
+     :level (if (= 7 i) :error :warning)
+     :value (+ 151 i)
+     :limit 150
+     :message (str (+ 151 i) " is above the maximum of 150")}))
+
+(deftest collapsed-violations-test
+  (let [summary (github-report/summary
+                  (assoc report :violations (many-violations 25)))
+        [shown more] (str/split summary #"<details><summary>5 more violations</summary>")]
+    (is (some? more))
+    (is (re-find #"\| ❌ error \| component b7 \|[^\n]*\n\| ⚠️ warning \| component b24 \|"
+          shown))
+    (is (str/includes? more "component b4 |"))
+    (is (not (str/includes? shown "component b4 |")))
+    (is (str/includes? more "</details>")))
+  (is (not (str/includes? (github-report/summary
+                            (assoc report :violations (many-violations 20)))
+             "more violation"))))

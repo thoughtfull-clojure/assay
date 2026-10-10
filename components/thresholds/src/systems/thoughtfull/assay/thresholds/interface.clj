@@ -43,3 +43,9 @@
   "The more severe of two levels: :error, :warning, or nil for none."
   [a b]
   (core/worse-level a b))
+
+(defn by-severity
+  "Violations sorted most severe first: errors before warnings, then by how
+  far each value is past its limit, relative to the limit."
+  [violations]
+  (core/by-severity violations))

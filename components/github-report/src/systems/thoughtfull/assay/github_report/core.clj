@@ -139,23 +139,42 @@
       (if (= 1 hidden-existing) "violation" "violations")
       " not shown, since the change didn't introduce them.")))
 
+(def ^:private shown-violations
+  "How many violations to list before collapsing the rest."
+  20)
+
+(defn- by-severity
+  "Violations a change introduced first, each group most severe first."
+  [violations]
+  (sort-by (comp status-order :status) (thresholds/by-severity violations)))
+
+(defn- violation-table
+  [violations status?]
+  (table (cond-> ["Level" "Brick" "Metric" "Detail"]
+           status? (conj "Status"))
+    (for [{:keys [brick level message location status] :as violation}
+          violations]
+      (cond-> [(level-mark level)
+               (brick-label brick)
+               (metrics/label violation)
+               (str message (location-text location))]
+        status? (conj (name status))))))
+
 (defn- violations-section
-  "The violations, with a status column when a comparison left existing
-  ones in."
+  "The violations, most severe first, with a status column when a
+  comparison left existing ones in. Past the first few, the rest collapse."
   [{:keys [violations comparison hidden-warnings hidden-existing]}]
-  (let [status? (and comparison (nil? hidden-existing))]
+  (let [status? (and comparison (nil? hidden-existing))
+        [shown more] (split-at shown-violations (by-severity violations))]
     (str "### Violations\n\n"
       (if (empty? violations)
         (none-text comparison hidden-warnings)
-        (table (cond-> ["Level" "Brick" "Metric" "Detail"]
-                 status? (conj "Status"))
-          (for [{:keys [brick level message location status] :as violation}
-                (sort-by (comp status-order :status) violations)]
-            (cond-> [(level-mark level)
-                     (brick-label brick)
-                     (metrics/label violation)
-                     (str message (location-text location))]
-              status? (conj (name status))))))
+        (str (violation-table shown status?)
+          (when (seq more)
+            (str "\n\n<details><summary>" (count more) " more "
+              (if (= 1 (count more)) "violation" "violations")
+              "</summary>\n\n" (violation-table more status?)
+              "\n\n</details>"))))
       (hidden-existing-text hidden-existing))))
 
 (defn- resolved-section

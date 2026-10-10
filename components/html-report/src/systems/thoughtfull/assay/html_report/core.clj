@@ -99,7 +99,8 @@ p.none { color: var(--muted); }
 .down { color: var(--ok); }
 tr.average td { font-weight: 600; border-top: 2px solid var(--border); }
 details.legend { margin-top: 12px; }
-details.dependency-table .scroll { margin-top: 12px; }
+details.dependency-table .scroll,
+details.more-violations .scroll { margin-top: 12px; }
 pre.mermaid { background: none; margin: 0; text-align: center; }
 pre.mermaid:not([data-processed]) { visibility: hidden; height: 0; }
 .graph { position: relative; }
@@ -223,15 +224,20 @@ details.legend dd code {
      (if (= 1 hidden-existing) "violation" "violations")
      " not shown, since the change didn't introduce them."]))
 
+(def ^:private shown-violations
+  "How many violations to list before collapsing the rest."
+  20)
+
+(defn- by-severity
+  "Violations a change introduced first, each group most severe first."
+  [violations]
+  (sort-by (comp status-order :status) (thresholds/by-severity violations)))
+
 (defn- violation-rows
   [violations status?]
   (table (cond-> ["Level" "Brick" "Metric" "Detail" "Location"]
            status? (conj "Status"))
-    (for [{:keys [brick level message status] :as v}
-          (sort-by (juxt (comp status-order :status)
-                     #(if (= :error (:level %)) 0 1)
-                     (comp :name :brick))
-            violations)]
+    (for [{:keys [brick level message status] :as v} violations]
       (cond-> [(level-badge level)
                (brick-cell brick)
                (metrics/label v)
@@ -240,16 +246,26 @@ details.legend dd code {
         status? (conj (badge (str "status " (name status))
                         (name status)))))))
 
+(defn- more-violations
+  "The violations past the first few, collapsed."
+  [more status?]
+  (when (seq more)
+    [:details {:class "legend more-violations"}
+     [:summary (count more) " more "
+      (if (= 1 (count more)) "violation" "violations")]
+     (violation-rows more status?)]))
+
 (defn- violations-table
-  "The violations, with a status column when a comparison left existing
-  ones in."
+  "The violations, most severe first, with a status column when a
+  comparison left existing ones in. Past the first few, the rest collapse."
   [{:keys [violations comparison hidden-warnings hidden-existing]}]
-  (list
-    (if (empty? violations)
-      [:p {:class "none"} (none-text comparison hidden-warnings)]
-      (violation-rows violations
-        (and comparison (nil? hidden-existing))))
-    (hidden-existing-key hidden-existing)))
+  (let [status? (and comparison (nil? hidden-existing))
+        [shown more] (split-at shown-violations (by-severity violations))]
+    (list
+      (if (empty? violations)
+        [:p {:class "none"} (none-text comparison hidden-warnings)]
+        (list (violation-rows shown status?) (more-violations more status?)))
+      (hidden-existing-key hidden-existing))))
 
 (defn- resolved-table
   [resolved]

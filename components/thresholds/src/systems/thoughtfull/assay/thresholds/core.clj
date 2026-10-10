@@ -158,3 +158,21 @@
 (defn worse-level
   [a b]
   (if (some #{:error} [a b]) :error (or a b)))
+
+(defn- excess
+  "How far past its limit a violation's value is, relative to the limit, so
+  metrics of different scales compare. 0 when either is unknown."
+  [{:keys [value limit]}]
+  (if (and (number? value) (number? limit))
+    (/ (Math/abs (double (- value limit)))
+      (if (zero? limit) 1.0 (Math/abs (double limit))))
+    0.0))
+
+(defn by-severity
+  [violations]
+  (sort-by (juxt #(if (= :error (:level %)) 0 1)
+             (comp - excess)
+             (comp :name :brick)
+             #(get-in % [:location :file] "")
+             #(get-in % [:location :line] 0))
+    violations))
