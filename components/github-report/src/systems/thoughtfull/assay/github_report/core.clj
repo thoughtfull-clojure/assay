@@ -231,21 +231,25 @@
     bricks))
 
 (defn- unchanged-text
-  [shown unchanged]
+  [noun shown unchanged]
   (str "\n\n"
     (if (empty? shown)
-      (str "No brick changed in this section. The average is of all "
-        unchanged " bricks.")
-      (str unchanged (if (= 1 unchanged) " unchanged brick" " unchanged bricks")
-        " not shown. The average is of all bricks."))))
+      (str "No " noun " changed in this section. The average is of all "
+        unchanged " " noun "s.")
+      (str unchanged " unchanged " noun (when (< 1 unchanged) "s")
+        " not shown. The average is of all " noun "s."))))
 
 (defn- section-table
-  "A section's columns for every brick, then an average row of all bricks,
-  a key for bold outliers if there are any, and the legend. With a
-  comparison, only bricks that are new or changed in the section are
-  shown, with how much each value changed, and a key counts the rest."
-  [columns {:keys [bricks violations comparison]}]
-  (let [flagged (flagged-cells violations)
+  "A section's columns for every brick it shows (components only, for a
+  components-only section), then an average row of those bricks, a key
+  for bold outliers if there are any, and the legend. With a comparison,
+  only bricks that are new or changed in the section are shown, with how
+  much each value changed, and a key counts the rest."
+  [{:keys [columns components-only] :as section}
+   {:keys [violations comparison] :as report}]
+  (let [bricks (metrics/section-measurements section (:bricks report))
+        noun (if components-only "component" "brick")
+        flagged (flagged-cells violations)
         outliers (metrics/outliers bricks metrics/outlier-std-devs)
         outlier? (fn [brick-name {:keys [keys]}]
                    (some #(outliers [brick-name %]) keys))
@@ -273,7 +277,7 @@
              (for [column columns]
                (metrics/column-text column averages)))]))
       (when (and comparison (pos? unchanged))
-        (unchanged-text shown unchanged))
+        (unchanged-text noun shown unchanged))
       (when (some (fn [{:keys [brick]}]
                     (some #(outlier? (:name brick) %) columns))
               shown)
@@ -308,11 +312,11 @@
   "A section for each group of metrics. Dependencies start with the brick
   graph."
   [report]
-  (for [{:keys [key label columns]} metrics/sections]
+  (for [{:keys [key label] :as section} metrics/sections]
     (str "### " label "\n\n"
       (when (= :dependencies key)
         (some-> (dependencies-graph report) (str "\n\n")))
-      (section-table columns report)
+      (section-table section report)
       (when (= :io key)
         (some->> (shared-libraries-table report) (str "\n\n"))))))
 

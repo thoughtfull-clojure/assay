@@ -94,7 +94,9 @@ namespace's aliases and refers.
 | Cohesion | `own references / workspace references`; libraries don't count |
 | Shared keywords | Keywords that another brick also uses (see connascence) |
 
-Low cohesion means a brick is mostly glue between other bricks.
+Low cohesion means a brick is mostly glue between other bricks. That's
+expected of a base; a base with high cohesion holds logic that belongs in
+a component.
 
 ### Connascence
 
@@ -191,14 +193,17 @@ complexity (size and function complexity), modularity (abstractness,
 cohesion, and shared keywords), I/O and mutability (libraries, with a
 table of those more than one brick requires, host interop, and mutable
 state), error handling, and tests. Each has a table of every brick, with
-a row of averages across all bricks. With `--base`, each table shows only
+a row of averages across all bricks. The dependencies table leaves bases
+out, since nothing can depend on a base; the graph shows what each base
+depends on. With `--base`, each table shows only
 the bricks that are new or whose values in that section changed, with
 how much they changed, such as `12 (+3)`. The average row stays an
 average of all bricks. The tables mark each value
 2 or more standard deviations from the mean of all bricks: the HTML report
 outlines it, and the GitHub report sets it in bold. Afferent coupling,
-instability, and abstractness compare components only, since a base has no
-interface and no dependents.
+instability, abstractness, and cohesion compare components only, since a
+base has no interface and no dependents, and is glue by design. A base
+has no abstractness, so its cell shows a dash.
 
 Assay exits with status 1 when a brick or function exceeds an error-level
 threshold, and with status 2 for usage errors.

@@ -36,6 +36,16 @@
     (is (str/includes? summary "**12.0** ❌"))
     (is (str/includes? summary "**300** ⚠️"))))
 
+(deftest base-rows-test
+  (let [summary (github-report/summary report)
+        section (fn [heading]
+                  (second (re-find (re-pattern (str "(?s)### " heading
+                                                 "\n(.*?)###"))
+                            summary)))]
+    (is (not (str/includes? (section "Dependencies") "| base b |"))
+      "the dependencies table leaves bases out")
+    (is (str/includes? (section "Modularity") "| base b |"))))
+
 (def ^:private compared
   (-> report
     (assoc-in [:violations 0 :status] :new)

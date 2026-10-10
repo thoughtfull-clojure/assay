@@ -65,10 +65,8 @@
         interface (definitions (filter #(names/interface-ns? workspace own
                                           (:ns %))
                                  sources))]
-    (cond
-      (= :base (:type brick)) 0.0
-      (zero? total) nil
-      :else (- 1.0 (/ interface (double total))))))
+    (when (and (= :component (:type brick)) (pos? total))
+      (- 1.0 (/ interface (double total))))))
 
 (defn- dependency-metrics
   [workspace own measurement efferent afferent]

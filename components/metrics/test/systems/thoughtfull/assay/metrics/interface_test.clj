@@ -314,6 +314,26 @@
                       (format "%.2f" (:abstractness (metrics/averages
                                                       measurements))))))))))
 
+(deftest section-measurements-test
+  (let [measurements [{:brick {:name "c" :type :component}}
+                      {:brick {:name "b" :type :base}}]
+        section (fn [k] (first (filter #(= k (:key %)) metrics/sections)))]
+    (is (= ["c"] (map (comp :name :brick)
+                   (metrics/section-measurements (section :dependencies)
+                     measurements)))
+      "the dependencies table leaves bases out")
+    (is (= ["c" "b"] (map (comp :name :brick)
+                       (metrics/section-measurements (section :modularity)
+                         measurements))))))
+
+(deftest cohesion-average-test
+  (is (= 0.8 (:cohesion (metrics/averages
+                          [{:brick {:name "c" :type :component}
+                            :metrics {:cohesion 0.8}}
+                           {:brick {:name "b" :type :base}
+                            :metrics {:cohesion 0.1}}])))
+    "a base's cohesion doesn't count toward the average"))
+
 (deftest definitions-test
   (is (= [{:name 'labels :line 1 :references #{'metrics/metrics 'into}
            :throws? false}

@@ -63,10 +63,10 @@
       (is (= 0.0 (get-in m ["b" :instability])))
       (is (= 1.0 (get-in m ["x" :instability]))))
     (testing "abstractness: 1 - interface definitions / all definitions;
-              bases are 0"
+              bases have none"
       (is (= 0.9 (get-in m ["a" :abstractness])))
       (is (= 0.5 (get-in m ["b" :abstractness])))
-      (is (= 0.0 (get-in m ["x" :abstractness]))))
+      (is (nil? (get-in m ["x" :abstractness]))))
     (testing "no violations"
       (is (empty? (dependencies/check {} analysis))))))
 

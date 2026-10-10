@@ -52,8 +52,15 @@
 (def sections
   "Report sections in order, each a map of :key, :label, and :columns, the
   columns (as in columns) it shows: dependencies, complexity, modularity,
-  I/O and mutability, error handling, and tests."
+  I/O and mutability, error handling, and tests. :components-only is true
+  for a section whose table leaves bases out."
   core/sections)
+
+(defn section-measurements
+  "The measurements a section's table shows: components only, for a
+  section marked :components-only, otherwise all of them."
+  [section measurements]
+  (core/section-measurements section measurements))
 
 (defn format-value
   "Brick metric k's value v for display: decimals to their precision,
@@ -70,7 +77,7 @@
 (defn averages
   "Each brick metric's mean across the measurements that have a value, or
   nil when none do. Metrics that only describe components, such as
-  abstractness and afferent coupling, average components only."
+  abstractness, afferent coupling, and cohesion, average components only."
   [measurements]
   (core/averages measurements))
 

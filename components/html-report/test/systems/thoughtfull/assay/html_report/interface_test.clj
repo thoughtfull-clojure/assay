@@ -143,6 +143,25 @@
         "component</span> <span class=\"badge status\">new</span>")
     "a changed brick missing from the base is new"))
 
+(deftest base-rows-test
+  (let [html (html-report/render
+               (update report :bricks conj
+                 {:brick {:name "cli" :type :base}
+                  :metrics {:afferent 0 :efferent 2 :instability 1.0
+                            :abstractness nil :cohesion 0.25}}))
+        section (fn [heading]
+                  (second (re-find (re-pattern (str "(?s)<h2>" heading
+                                                 "</h2>(.*?)<h2>"))
+                            html)))]
+    (is (not (str/includes? (section "Dependencies")
+               "<span class=\"brick-name\">cli</span> <span class=\"type\">base</span></td><td class"))
+      "the dependencies table leaves bases out")
+    (is (str/includes? (section "Modularity")
+          (str "<span class=\"brick-name\">cli</span> <span class=\"type\">"
+            "base</span></td><td class=\"num\">–</td>"
+            "<td class=\"num\">0.25</td>"))
+      "a base has no abstractness, but has cohesion")))
+
 (deftest legend-code-test
   (is (str/includes? (html-report/render report)
         "<dd><code>Ce / (Ca + Ce)</code>, from <code>0</code>")))

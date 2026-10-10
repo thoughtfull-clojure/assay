@@ -361,12 +361,16 @@ details.legend dd code {
     bricks))
 
 (defn- section-table
-  "A section's columns for every brick, then an average row of all bricks.
-  With a comparison, only bricks that are new or changed in the section
-  are shown, with how much each value changed, and a key counts the rest.
-  A key explains any outlined value."
-  [columns bricks violations comparison]
-  (let [flagged (flagged-cells violations :brick
+  "A section's columns for every brick it shows (components only, for a
+  components-only section), then an average row of those bricks. With a
+  comparison, only bricks that are new or changed in the section are
+  shown, with how much each value changed, and a key counts the rest. A
+  key explains any outlined value."
+  [{:keys [columns components-only] :as section} all-bricks violations
+   comparison]
+  (let [bricks (metrics/section-measurements section all-bricks)
+        noun (if components-only "component" "brick")
+        flagged (flagged-cells violations :brick
                   (juxt (comp :name :brick) :metric))
         outliers (metrics/outliers bricks metrics/outlier-std-devs)
         averages (metrics/averages bricks)
@@ -400,11 +404,10 @@ details.legend dd code {
       (when (and comparison (pos? unchanged))
         [:p {:class "table-key"}
          (if (empty? shown)
-           (str "No brick changed in this section. The average is of all "
-             unchanged " bricks.")
-           (str unchanged
-             (if (= 1 unchanged) " unchanged brick" " unchanged bricks")
-             " not shown. The average is of all bricks."))])
+           (str "No " noun " changed in this section. The average is of"
+             " all " unchanged " " noun "s.")
+           (str unchanged " unchanged " noun (when (< 1 unchanged) "s")
+             " not shown. The average is of all " noun "s."))])
       (when outlined?
         [:p {:class "table-key"}
          [:span {:class "outlier-key"}] " Outlined: "
@@ -700,12 +703,12 @@ function viewer(graph) {
     [:h2 "Violations"]
     (violations-table report)
     (resolved-section report)
-    (for [{:keys [key label columns]} metrics/sections]
+    (for [{:keys [key label columns] :as section} metrics/sections]
       (list
         [:h2 label]
         (when (= :dependencies key)
           (dependencies-section report))
-        (section-table columns bricks violations comparison)
+        (section-table section bricks violations comparison)
         (when (= :io key)
           (shared-libraries-table report))
         (legend columns)))

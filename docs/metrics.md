@@ -149,8 +149,8 @@ functions.
 The report's brick tables mark any value that is 2 or more standard deviations
 from the mean of all bricks, in either direction: the HTML report outlines
 it, and the GitHub report sets it in bold. Afferent coupling, instability,
-and abstractness compare components only, since every base has no
-interface and no dependents. A marked value isn't a
+abstractness, and cohesion compare components only, since every base has
+no interface and no dependents, and is glue by design. A marked value isn't a
 violation. It shows where a brick differs from the rest of the workspace,
 which is worth understanding: a brick much larger than the others, or with
 far more dependents, may be doing more than its
@@ -182,7 +182,9 @@ wire components together.
 Instability, `Ce / (Ca + Ce)`, combines the two. A brick near `0` has many
 dependents and few dependencies: it's stable, because it's hard to change.
 A brick near `1` depends on others and nothing depends on it: it's easy to
-change, as bases usually are.
+change. Nothing can depend on a base, so every base is at `1`, and the
+dependencies table leaves bases out. The graph shows what each base
+depends on.
 
 The Stable Dependencies Principle says to depend in the direction of
 stability, so that hard-to-change bricks never rely on easy-to-change
@@ -268,7 +270,9 @@ Cohesion is the share of a brick's references to workspace code that point
 inside the brick. A low value means the brick mostly calls other bricks.
 That's expected of a base, but a component that is mostly glue may not
 earn its place. Consider moving its logic into the bricks it calls, or
-merging it with the brick it uses most.
+merging it with the brick it uses most. For a base, read it the other way:
+high cohesion means the base does work of its own, which usually belongs
+in a component. Averages and outliers compare components only.
 
 ### Shared keywords
 

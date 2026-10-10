@@ -49,14 +49,15 @@
     :section :modularity
     :label "Abstractness"
     :description (str "1 - interface definitions / all definitions: how"
-                   " much the interface hides. Bases are 0.")
+                   " much the interface hides. Bases have none.")
     :format :decimal
     :components-only true}
    {:key :cohesion
     :section :modularity
     :label "Cohesion"
     :description "Own-namespace references / all workspace references."
-    :format :decimal}
+    :format :decimal
+    :components-only true}
    {:key :shared-keywords
     :section :modularity
     :label "Shared keywords"
@@ -167,12 +168,14 @@
      " `defn`, `defmethod`, and the like. A small interface over a large"
      " implementation scores near `1`. A component whose interface is most"
      " of its definitions hides little: at `0.5`, each interface definition"
-     " hides only one more. Bases are `0`.")
+     " hides only one more. Bases have no interface, so no abstractness.")
    :cohesion
    (str "`own references / workspace references`: how much the brick's"
      " code refers to its own namespaces rather than to other bricks."
      " References to libraries don't count. A low value means the brick"
-     " is mostly glue between other bricks.")
+     " is mostly glue between other bricks. For a base, low is expected;"
+     " high suggests logic that belongs in a component. Bases don't count"
+     " toward the average.")
    :shared-keywords
    (str "Keywords this brick uses that another brick also uses: usually"
      " map keys that both must agree on (connascence of meaning). Renaming"
@@ -251,6 +254,12 @@
            :keys [key]})
     metrics))
 
+(def ^:private components-only-sections
+  "Sections whose bricks are components only: a base's afferent coupling
+  and instability follow from Polylith's structure, and the brick graph
+  already shows what each base depends on."
+  #{:dependencies})
+
 (def sections
   (vec (for [[key label] [[:dependencies "Dependencies"]
                           [:complexity "Complexity"]
@@ -258,9 +267,16 @@
                           [:io "I/O and mutability"]
                           [:errors "Error handling"]
                           [:tests "Tests"]]]
-         {:key key
-          :label label
-          :columns (filterv #(= key (:section %)) columns)})))
+         (cond-> {:key key
+                  :label label
+                  :columns (filterv #(= key (:section %)) columns)}
+           (components-only-sections key) (assoc :components-only true)))))
+
+(defn section-measurements
+  [{:keys [components-only]} measurements]
+  (if components-only
+    (filterv #(= :component (get-in % [:brick :type])) measurements)
+    measurements))
 
 (defn format-value
   [k v]
