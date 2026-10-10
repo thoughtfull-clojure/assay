@@ -1,20 +1,32 @@
 (ns systems.thoughtfull.assay.text-report.core
   (:require
    [clojure.string :as str]
-   [systems.thoughtfull.assay.metrics.interface :as metrics]))
+   [systems.thoughtfull.assay.metrics.interface :as metrics]
+   [systems.thoughtfull.assay.thresholds.interface :as thresholds]))
 
 (defn- shown?
   [{:keys [status]}]
   (contains? #{nil :new} status))
 
+(defn- where
+  "Where a row is: its first location, or its first brick's directory."
+  [{:keys [bricks locations]}]
+  (if-let [{:keys [file line]} (first locations)]
+    (str file ":" line)
+    (let [{:keys [dir name]} (first bricks)]
+      (or dir name))))
+
+(defn- what
+  "What a row says: a function's name and the limits it is past, or a
+  metric's label and what its violation says."
+  [{:keys [group locations] :as row}]
+  (if (= :function-rows group)
+    (str (:name (first locations)) ": " (thresholds/row-text row))
+    (str (metrics/label row) " " (thresholds/row-text row))))
+
 (defn- line
-  [{:keys [brick level message location] :as violation}]
-  (str (format "%-8s" (name level))
-    (if (:file location)
-      (str (:file location) ":" (:line location))
-      (:dir brick (:name brick)))
-    "  " (metrics/label violation) " " message
-    (when (:name location) (str " (" (:name location) ")"))))
+  [{:keys [level] :as row}]
+  (str (format "%-8s" (name level)) (where row) "  " (what row)))
 
 (defn- plural
   [n word]
@@ -30,7 +42,8 @@
 
 (defn- summary
   [{:keys [bricks violations comparison hidden-warnings hidden-existing]}]
-  (let [{shown true hidden false} (group-by shown? violations)
+  (let [{shown true hidden false} (group-by shown?
+                                    (thresholds/rows violations))
         not-new (+ (count hidden) (or hidden-existing 0))
         counts (frequencies (map :level shown))
         qualifier (if comparison "new " "")]
@@ -42,15 +55,18 @@
           (when (pos? not-new)
             (str " (" not-new " not new, not shown)")))))))
 
+(defn- section-lines
+  "A heading for each section with rows to show, then a line for each."
+  [rows]
+  (let [by-section (group-by :section rows)]
+    (for [{:keys [key label]} metrics/sections
+          :let [section-rows (by-section key)]
+          :when (seq section-rows)]
+      (str/join "\n" (cons label (map line section-rows))))))
+
 (defn render
   [report]
-  (str/join "\n"
+  (str/join "\n\n"
     (concat
-      (->> (:violations report)
-        (filter shown?)
-        (sort-by (juxt #(if (= :error (:level %)) 0 1)
-                   #(get-in % [:location :file] "")
-                   #(get-in % [:location :line] 0)))
-        (map line))
-      [(summary report)
-       ""])))
+      (section-lines (filter shown? (thresholds/rows (:violations report))))
+      [(str (summary report) "\n")])))

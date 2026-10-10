@@ -82,6 +82,14 @@
   [violations]
   (core/rows violations))
 
+(defn row-text
+  "What a row (from rows) says, as plain text: each of a function's
+  metrics past its limit, such as \"complexity 12 > 10, depth 9 > 8 (line
+  7)\"; how widely a library is required, and by which bricks; which
+  bricks share a duplicate; or what its one violation says."
+  [row]
+  (core/row-text row))
+
 (defn by-severity
   "Violations sorted most severe first: errors before warnings, then by how
   far each value is past its limit, relative to the limit."

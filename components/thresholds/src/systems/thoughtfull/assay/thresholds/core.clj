@@ -404,6 +404,32 @@
              #(:name (first (:bricks %))))
     rows))
 
+(defn- function-part
+  "One of a function row's violations, such as \"depth 16 > 8 (line
+  1016)\"."
+  [line {:keys [metric value limit location message]}]
+  (let [m (metrics/metric metric)]
+    (str (name (:function-key m)) " "
+      (if (and (number? value) (number? limit))
+        (str (fmt value) " " (threshold-text m limit))
+        message)
+      (when (not= line (:line location))
+        (str " (line " (:line location) ")")))))
+
+(defn row-text
+  [{:keys [group violations value subject bricks locations]}]
+  (let [limit (:limit (first violations))
+        names (str/join ", " (map :name bricks))]
+    (case group
+      :function-rows (str/join ", " (map #(function-part (:line (first locations))
+                                            %)
+                                      violations))
+      :library-spread (str subject " is required by " value " bricks, more"
+                        " than " (fmt limit) ": " names)
+      :duplicate-code (str value " forms in each of " names ", the same code"
+                        " (more than " (fmt limit) ")")
+      (:message (first violations)))))
+
 (defn rows
   [violations]
   (let [groups (group-by row-key violations)]
