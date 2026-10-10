@@ -9,12 +9,6 @@ and assay follows [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
-- A sample GitHub job summary, `docs/sample-github-summary.md`, beside the
-  sample HTML report. `bb sample-report` regenerates both.
-- `:allow` for library spread, a set of libraries that don't count.
-- Slingshot's `throw+` counts as a throw, typed by its map's `:type`.
-- Cell tooltips explain values, such as how many interface definitions
-  can throw, and which side of the main sequence a component is on.
 - ClojureScript support. Requires of JavaScript modules, such as
   `["react" :as react]`, count as libraries named by their npm package;
   `:require-macros` and `:use-macros` count as requires; and requires in
@@ -23,12 +17,14 @@ and assay follows [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.htm
   `(catch :default e)`, `js/Error`, and `js/Object` as broad catches.
   ClojureScript's own namespaces and the Google Closure Library don't
   count as libraries.
+- `:allow` for library spread, a set of libraries that don't count.
+- Slingshot's `throw+` counts as a throw, typed by its map's `:type`.
+- Cell tooltips explain values, such as how many interface definitions
+  can throw, and which side of the main sequence a component is on.
+- A sample GitHub job summary, `docs/sample-github-summary.md`, beside the
+  sample HTML report. `bb sample-report` regenerates both.
 
 ### Changed
-
-- A reader conditional is one form whose children are its branch values,
-  for every platform, so its features no longer count as forms, nesting,
-  or shared keywords.
 
 - **Breaking:** the configuration follows the report's layout. Its keys
   are the report's categories (`:dependencies`, `:complexity`,
@@ -55,18 +51,33 @@ and assay follows [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.htm
   duplicate is one row with both copies. The text report groups its
   lines the same way. Column headers and legends give each metric's
   thresholds, and the thresholds table mirrors the configuration.
+- The reports list violations most severe first: errors before
+  warnings, then by how far each value is past its limit. The HTML and
+  GitHub reports collapse a list's rows past the first 20.
+- With `--base`, the reports show only what the change affects: each
+  metric table lists only the bricks that are new or changed in that
+  section, followed by the average of all bricks, and the violations list
+  only new ones, with a count of those left out. With `--fail-on all`,
+  every violation is still listed.
+- With `--base`, a function violation that was in the base is new when
+  the change made it worse, and its message says what the value was.
+- CI fails pushes to `main` only on new error-level violations, as it
+  does pull requests, rather than on every error-level violation.
 - Defaults: unstable dependencies need an instability gap of more than
-  0.1, positional interface and many-parameter functions allow 4,
-  library spread allows 3 bricks, and main-sequence distance (warning
-  above 0.7) replaces the abstractness rule. Untyped errors, interop
-  density, and untested interface (a share, warning above half) have
-  rules now.
+  0.1, positional interface allows 4 parameters rather than 3, library
+  spread allows 3 bricks rather than 1, and main-sequence distance
+  (warning above 0.7) replaces the abstractness rule. Untyped errors,
+  interop density, untested interface (a share, warning above half),
+  cohesion (warning below 0.5), and assertions and forms per test
+  (warning 2 standard deviations above the other components) have rules
+  now.
 - Limits are strict: a duplicate of exactly 30 forms, or a co-change
   strength of exactly 0.5, isn't flagged.
 - Abstractness, error surface, and untested interface count only public
   interface definitions; error surface and untested interface are
-  shares of them. Shared keywords count only qualified keywords.
-  Cohesion measures components only.
+  shares of them. Bases have no abstractness, rather than `0`. Shared
+  keywords count only qualified keywords. Cohesion measures components
+  only.
 - Assay checks means and shares only for bricks with enough to go on: 5
   functions for the function means, 10 tests for the means per test, 10
   definitions for main-sequence distance and untested interface, and 10
@@ -74,18 +85,15 @@ and assay follows [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.htm
 - Outlines mark only ratios, densities, and means, only when worse, and
   with the statistic `{:std-devs k}` uses: the sample standard deviation
   of the other bricks the metric checks.
-- The dependencies table shows bases.
+- A `case` adds 1 to cyclomatic complexity, however many clauses it has,
+  since it dispatches on constants in one step. Decisions in its bodies
+  still count.
+- A reader conditional is one form whose children are its branch values,
+  for every platform, so its features no longer count as forms, nesting,
+  or shared keywords.
 - Broad catches leave out catches that rethrow, and say whether a catch
   logs or carries on silently. Boundary crossings leave out requires of
   another brick's test namespaces.
-
-- With `--base`, the reports show only what the change affects: each
-  metric table lists only the bricks that are new or changed in that
-  section, followed by the average of all bricks, and the violations list
-  only new ones, with a count of those left out. With `--fail-on all`,
-  every violation is still listed.
-- CI fails pushes to `main` only on new error-level violations, as it
-  does pull requests, rather than on every error-level violation.
 - The HTML report's dependency graph sits in a taller, resizable frame
   with pan, zoom, fit, and full screen controls, so large workspaces stay
   readable.
@@ -94,6 +102,10 @@ and assay follows [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.htm
 
 - The files, host interop, catches, and shared libraries columns. The
   shared libraries table remains, and marks spread libraries.
+- Change thresholds (`:change-thresholds`) and the new dependencies rule.
+  With `--base`, the graph still dashes new dependencies.
+- The default threshold for mean function complexity. The metric remains,
+  and takes thresholds like any other.
 
 ### Fixed
 
@@ -140,6 +152,8 @@ and assay follows [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.htm
   the mean of all bricks, with an outline in the HTML report and bold in
   the GitHub report. Metrics that only describe components compare
   components only.
+- A guide to using assay's metrics, `docs/metrics.md`: why each metric
+  matters, how to read it, and what to do when it flags something.
 
 ### Changed
 
@@ -151,7 +165,6 @@ and assay follows [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.htm
   nesting depth.
 - The bricks summary ends with a row of averages across bricks, in place
   of totals.
-
 - Abstractness counts definitions rather than forms:
   `1 - interface definitions / all definitions`. Forms made every
   component look abstract, since interface functions are short.
@@ -177,8 +190,8 @@ and assay follows [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.htm
 - Function metrics: cyclomatic complexity, nesting depth, size in forms,
   and positional parameters, with a violation for each function that
   breaks a rule.
-- Brick metrics: files, forms, functions, and mean / max function
-  complexity.
+- Brick metrics: files, forms, functions, mean / max function
+  complexity, and max nesting depth.
 - Dependency metrics from `ns` requires: afferent and efferent coupling,
   instability, and abstractness as the interface ratio.
 - Dependency checks: stable dependencies, cycles, new dependencies, and
