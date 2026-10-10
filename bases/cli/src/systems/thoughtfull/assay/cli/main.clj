@@ -184,27 +184,40 @@
 
 (defn- hide-warnings
   "Remove warning-level violations from report, counting in
-  :hidden-warnings those a change introduced (or all, without a base). The
-  graph still draws every violation, in :graph-violations, since the lines
-  for co-change and new dependencies show structure, not just problems."
+  :hidden-warnings those a change introduced (or all, without a base)."
   [report]
   (let [warning? #(= :warning (:level %))
         warnings (filter warning? (:violations report))]
     (cond-> (assoc report
-              :graph-violations (:violations report)
               :violations (vec (remove warning? (:violations report)))
               :hidden-warnings (count (filter #(contains? #{nil :new} (:status %))
                                         warnings)))
       (:comparison report)
       (update-in [:comparison :resolved] #(vec (remove warning? %))))))
 
+(defn- hide-existing
+  "Remove the violations a change didn't introduce from report, counting
+  them in :hidden-existing, so the report shows what the change added."
+  [report]
+  (let [existing? #(contains? #{:existing :indirect} (:status %))]
+    (assoc report
+      :violations (vec (remove existing? (:violations report)))
+      :hidden-existing (count (filter existing? (:violations report))))))
+
 (defn- execute
+  "Report on the workspace. The graph draws every violation, in
+  :graph-violations, since the lines for co-change and new dependencies
+  show structure, not just problems. When only new violations fail, the
+  others are left out of the report."
   [{:keys [workspace config base fail fail-on warnings] :as options} env]
-  (let [report (cond-> (report workspace (read-config workspace config) base)
-                 (not warnings) hide-warnings)]
+  (let [fail-on (or fail-on (if base "new" "all"))
+        full (report workspace (read-config workspace config) base)
+        report (cond-> (assoc full :graph-violations (:violations full))
+                 (not warnings) hide-warnings
+                 (and base (= "new" fail-on)) hide-existing)]
     (doseq [format (formats options env)]
       ((writers format) report options env))
-    (if (and fail (failed? report (or fail-on (if base "new" "all"))))
+    (if (and fail (failed? report fail-on))
       1
       0)))
 

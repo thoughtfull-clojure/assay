@@ -9,6 +9,13 @@ and assay follows [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.htm
 
 ### Changed
 
+- With `--base`, the reports show only what the change affects: each
+  metric table lists only the bricks that are new or changed in that
+  section, followed by the average of all bricks, and the violations list
+  only new ones, with a count of those left out. With `--fail-on all`,
+  every violation is still listed.
+- CI fails pushes to `main` only on new error-level violations, as it
+  does pull requests, rather than on every error-level violation.
 - The HTML report's dependency graph sits in a taller, resizable frame
   with pan, zoom, fit, and full screen controls, so large workspaces stay
   readable.

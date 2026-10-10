@@ -39,3 +39,9 @@
   (is (= "assay: 2 bricks, 0 errors, 17 warnings hidden (--warnings to show)\n"
         (text-report/render {:bricks [{} {}] :violations []
                              :hidden-warnings 17}))))
+
+(deftest hidden-existing-test
+  (is (= "assay: 1 brick, 0 new errors, 0 new warnings, compared with HEAD (3 not new, not shown)\n"
+        (text-report/render {:bricks [{}] :violations []
+                             :hidden-existing 3
+                             :comparison {:base-ref "HEAD"}}))))

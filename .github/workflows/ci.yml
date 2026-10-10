@@ -36,10 +36,10 @@ jobs:
       - name: Test (babashka)
         run: bb test
 
-      # On pull requests, compare with the merge-base of the target branch and
-      # fail only on new error-level violations in changed bricks. On pushes to
-      # main, compare with the commit before the push, so the report shows what
-      # changed, but fail on any error-level violation.
+      # Fail only on new error-level violations in changed bricks. Pull
+      # requests compare with the merge-base of the target branch, and pushes
+      # to main with the commit before the push. Without that commit, assay
+      # has no base and fails on any error-level violation.
       - name: Assay
         env:
           BASE_REF: ${{ github.base_ref }}
@@ -54,7 +54,6 @@ jobs:
             if git cat-file -e "${BEFORE}^{commit}" 2>/dev/null; then
               args+=(--base "$BEFORE")
             fi
-            args+=(--fail-on all)
           fi
           bb assay "${args[@]}"
 

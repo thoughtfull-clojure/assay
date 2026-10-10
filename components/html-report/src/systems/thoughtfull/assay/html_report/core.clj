@@ -205,25 +205,51 @@ details.legend dd code {
 
 ;; Violations
 
+(defn- none-text
+  "What to say when no violation is listed."
+  [comparison hidden-warnings]
+  (str (cond
+         (and comparison hidden-warnings) "No new errors"
+         comparison "No new violations"
+         hidden-warnings "No errors"
+         :else "No thresholds exceeded")
+    "."))
+
+(defn- hidden-existing-key
+  [hidden-existing]
+  (when (pos? (or hidden-existing 0))
+    [:p {:class "table-key"}
+     hidden-existing " existing or indirect "
+     (if (= 1 hidden-existing) "violation" "violations")
+     " not shown, since the change didn't introduce them."]))
+
+(defn- violation-rows
+  [violations status?]
+  (table (cond-> ["Level" "Brick" "Metric" "Detail" "Location"]
+           status? (conj "Status"))
+    (for [{:keys [brick level message status] :as v}
+          (sort-by (juxt (comp status-order :status)
+                     #(if (= :error (:level %)) 0 1)
+                     (comp :name :brick))
+            violations)]
+      (cond-> [(level-badge level)
+               (brick-cell brick)
+               (metrics/label v)
+               message
+               (location (:location v))]
+        status? (conj (badge (str "status " (name status))
+                        (name status)))))))
+
 (defn- violations-table
-  [violations comparison hidden-warnings]
-  (if (empty? violations)
-    [:p {:class "none"}
-     (if hidden-warnings "No errors." "No thresholds exceeded.")]
-    (table (cond-> ["Level" "Brick" "Metric" "Detail" "Location"]
-             comparison (conj "Status"))
-      (for [{:keys [brick level message status] :as v}
-            (sort-by (juxt (comp status-order :status)
-                       #(if (= :error (:level %)) 0 1)
-                       (comp :name :brick))
-              violations)]
-        (cond-> [(level-badge level)
-                 (brick-cell brick)
-                 (metrics/label v)
-                 message
-                 (location (:location v))]
-          comparison (conj (badge (str "status " (name status))
-                             (name status))))))))
+  "The violations, with a status column when a comparison left existing
+  ones in."
+  [{:keys [violations comparison hidden-warnings hidden-existing]}]
+  (list
+    (if (empty? violations)
+      [:p {:class "none"} (none-text comparison hidden-warnings)]
+      (violation-rows violations
+        (and comparison (nil? hidden-existing))))
+    (hidden-existing-key hidden-existing)))
 
 (defn- resolved-table
   [resolved]
@@ -305,29 +331,44 @@ details.legend dd code {
         (str "was " (metrics/format-value k base))))
     flags))
 
+(defn- shown-bricks
+  "The bricks a section's table shows: every brick, or with a comparison,
+  the bricks new since the base or with a column of the section changed."
+  [columns bricks {:keys [changed-bricks base-metrics] :as comparison}]
+  (if comparison
+    (filter (fn [{:keys [brick metrics]}]
+              (let [base (base-metrics (:name brick))]
+                (if base
+                  (some #(seq (deltas % base metrics)) columns)
+                  (contains? changed-bricks (:name brick)))))
+      bricks)
+    bricks))
+
 (defn- section-table
-  "A section's columns for every brick, then an average row. With a
-  comparison, a changed brick's values show how much they changed, and a
-  key explains any outlined value."
+  "A section's columns for every brick, then an average row of all bricks.
+  With a comparison, only bricks that are new or changed in the section
+  are shown, with how much each value changed, and a key counts the rest.
+  A key explains any outlined value."
   [columns bricks violations comparison]
   (let [flagged (flagged-cells violations :brick
                   (juxt (comp :name :brick) :metric))
         outliers (metrics/outliers bricks metrics/outlier-std-devs)
         averages (metrics/averages bricks)
-        {:keys [changed-bricks base-metrics]} comparison
+        {:keys [base-metrics]} comparison
+        shown (shown-bricks columns bricks comparison)
+        unchanged (- (count bricks) (count shown))
         outlined? (some (fn [{:keys [brick]}]
                           (some (fn [{:keys [keys]}]
                                   (some #(outliers [(:name brick) %]) keys))
                             columns))
-                    bricks)]
+                    shown)]
     (list
       (table (cons "Brick" (metric-headers columns))
         (concat
-          (for [{:keys [brick] :as m} bricks
+          (for [{:keys [brick] :as m} shown
                 :let [brick-name (:name brick)
-                      changed? (contains? changed-bricks brick-name)
-                      base (when changed? (base-metrics brick-name))]]
-            (cons (brick-cell brick (when (and changed? (nil? base)) "new"))
+                      base (when comparison (base-metrics brick-name))]]
+            (cons (brick-cell brick (when (and comparison (nil? base)) "new"))
               (for [column columns
                     :let [changes (deltas column base (:metrics m))]]
                 (metric-cell (-> (column-flags flagged brick-name column)
@@ -340,6 +381,14 @@ details.legend dd code {
                (for [column columns]
                  (metric-cell nil (metrics/column-text column averages))))
              {:class "average"})]))
+      (when (and comparison (pos? unchanged))
+        [:p {:class "table-key"}
+         (if (empty? shown)
+           (str "No brick changed in this section. The average is of all "
+             unchanged " bricks.")
+           (str unchanged
+             (if (= 1 unchanged) " unchanged brick" " unchanged bricks")
+             " not shown. The average is of all bricks."))])
       (when outlined?
         [:p {:class "table-key"}
          [:span {:class "outlier-key"}] " Outlined: "
@@ -633,7 +682,7 @@ function viewer(graph) {
   (list
     (summary-tiles report)
     [:h2 "Violations"]
-    (violations-table violations comparison (:hidden-warnings report))
+    (violations-table report)
     (resolved-section report)
     (for [{:keys [key label columns]} metrics/sections]
       (list

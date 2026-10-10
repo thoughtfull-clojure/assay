@@ -156,9 +156,10 @@ jobs:
         with:
           bb: latest
 
-      # On pull requests, compare with the target branch and fail only on
-      # new error-level violations. On pushes to main, compare with the
-      # commit before the push, but fail on any error-level violation.
+      # Fail only on new error-level violations. Pull requests compare with
+      # the target branch, and pushes to main with the commit before the
+      # push. Without that commit, assay has no base and fails on any
+      # error-level violation.
       - name: Assay
         env:
           BASE_REF: ${{ github.base_ref }}
@@ -173,7 +174,6 @@ jobs:
             if git cat-file -e "${BEFORE}^{commit}" 2>/dev/null; then
               args+=(--base "$BEFORE")
             fi
-            args+=(--fail-on all)
           fi
           bb assay "${args[@]}"
 

@@ -81,14 +81,18 @@
     (sh! root "git" "init" "-q" "-b" "main")
     (commit! root "base")
     (sh! root "git" "checkout" "-q" "-b" "feature")
-    (testing "existing violations do not fail"
+    (testing "existing violations do not fail, and are not shown"
       (let [[status out] (run ["-w" (str root) "-f" "github" "-b" "main"] {})]
         (is (= 0 status))
+        (is (not (str/includes? out "::notice")))
+        (is (str/includes? out
+              "1 existing or indirect violation not shown"))))
+    (testing "--fail-on all fails on existing violations, and shows them"
+      (let [[status out] (run ["-w" (str root) "-f" "github" "-b" "main"
+                               "--fail-on" "all"]
+                           {})]
+        (is (= 1 status))
         (is (str/includes? out "::notice"))))
-    (testing "--fail-on all fails on existing violations"
-      (is (= 1 (first (run ["-w" (str root) "-f" "github" "-b" "main"
-                            "--fail-on" "all"]
-                        {})))))
     (testing "new violations in changed bricks fail"
       (spit (io/file root "components/simple/src/simple.clj")
         "(ns simple)\n(defn f [x] (if x (when x 1) 2))\n")

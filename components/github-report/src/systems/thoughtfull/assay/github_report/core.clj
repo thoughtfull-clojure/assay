@@ -122,20 +122,41 @@
 (def ^:private status-order
   {:new 0 nil 0 :indirect 1 :existing 2})
 
+(defn- none-text
+  "What to say when no violation is listed."
+  [comparison hidden-warnings]
+  (str (cond
+         (and comparison hidden-warnings) "No new errors"
+         comparison "No new violations"
+         hidden-warnings "No errors"
+         :else "No thresholds exceeded")
+    "."))
+
+(defn- hidden-existing-text
+  [hidden-existing]
+  (when (pos? (or hidden-existing 0))
+    (str "\n\n" hidden-existing " existing or indirect "
+      (if (= 1 hidden-existing) "violation" "violations")
+      " not shown, since the change didn't introduce them.")))
+
 (defn- violations-section
-  [{:keys [violations comparison hidden-warnings]}]
-  (str "### Violations\n\n"
-    (if (empty? violations)
-      (if hidden-warnings "No errors." "No thresholds exceeded.")
-      (table (cond-> ["Level" "Brick" "Metric" "Detail"]
-               comparison (conj "Status"))
-        (for [{:keys [brick level message location status] :as violation}
-              (sort-by (comp status-order :status) violations)]
-          (cond-> [(level-mark level)
-                   (brick-label brick)
-                   (metrics/label violation)
-                   (str message (location-text location))]
-            comparison (conj (name status))))))))
+  "The violations, with a status column when a comparison left existing
+  ones in."
+  [{:keys [violations comparison hidden-warnings hidden-existing]}]
+  (let [status? (and comparison (nil? hidden-existing))]
+    (str "### Violations\n\n"
+      (if (empty? violations)
+        (none-text comparison hidden-warnings)
+        (table (cond-> ["Level" "Brick" "Metric" "Detail"]
+                 status? (conj "Status"))
+          (for [{:keys [brick level message location status] :as violation}
+                (sort-by (comp status-order :status) violations)]
+            (cond-> [(level-mark level)
+                     (brick-label brick)
+                     (metrics/label violation)
+                     (str message (location-text location))]
+              status? (conj (name status))))))
+      (hidden-existing-text hidden-existing))))
 
 (defn- resolved-section
   [{:keys [comparison]}]
@@ -160,20 +181,50 @@
     (table ["Metric" "Meaning"] (map (juxt :label :explanation) entries))
     "\n\n</details>"))
 
-(defn- delta-text
-  "How much a column's metrics changed from base, such as \" (+3)\"."
+(defn- changed-keys
+  "The keys of a column's metrics that changed from base."
   [{:keys [keys]} base head]
   (when base
-    (str/join
-      (for [k keys
-            :let [b (get base k) h (get head k)]
-            :when (and (some? b) (some? h) (not= b h))]
-        (str " (" (when (> h b) "+") (metrics/format-value k (- h b)) ")")))))
+    (for [k keys
+          :let [b (get base k) h (get head k)]
+          :when (and (some? b) (some? h) (not= b h))]
+      k)))
+
+(defn- delta-text
+  "How much a column's metrics changed from base, such as \" (+3)\"."
+  [column base head]
+  (str/join
+    (for [k (changed-keys column base head)
+          :let [b (get base k) h (get head k)]]
+      (str " (" (when (> h b) "+") (metrics/format-value k (- h b)) ")"))))
+
+(defn- shown-bricks
+  "The bricks a section's table shows: every brick, or with a comparison,
+  the bricks new since the base or with a column of the section changed."
+  [columns bricks {:keys [changed-bricks base-metrics] :as comparison}]
+  (if comparison
+    (filter (fn [{:keys [brick metrics]}]
+              (let [base (base-metrics (:name brick))]
+                (if base
+                  (some #(seq (changed-keys % base metrics)) columns)
+                  (contains? changed-bricks (:name brick)))))
+      bricks)
+    bricks))
+
+(defn- unchanged-text
+  [shown unchanged]
+  (str "\n\n"
+    (if (empty? shown)
+      (str "No brick changed in this section. The average is of all "
+        unchanged " bricks.")
+      (str unchanged (if (= 1 unchanged) " unchanged brick" " unchanged bricks")
+        " not shown. The average is of all bricks."))))
 
 (defn- section-table
-  "A section's columns for every brick, then an average row, a key for
-  bold outliers if there are any, and the legend. With a comparison, a
-  changed brick's values show how much they changed."
+  "A section's columns for every brick, then an average row of all bricks,
+  a key for bold outliers if there are any, and the legend. With a
+  comparison, only bricks that are new or changed in the section are
+  shown, with how much each value changed, and a key counts the rest."
   [columns {:keys [bricks violations comparison]}]
   (let [flagged (flagged-cells violations)
         outliers (metrics/outliers bricks metrics/outlier-std-devs)
@@ -184,16 +235,17 @@
                              (map #(flagged [brick-name %]) keys))
                          (when (outlier? brick-name column) :outlier)))
         averages (metrics/averages bricks)
-        {:keys [changed-bricks base-metrics]} comparison]
+        {:keys [base-metrics]} comparison
+        shown (shown-bricks columns bricks comparison)
+        unchanged (- (count bricks) (count shown))]
     (str
       (table (cons "Brick" (map :label columns))
         (concat
-          (for [{:keys [brick] :as m} bricks
+          (for [{:keys [brick] :as m} shown
                 :let [brick-name (:name brick)
-                      changed? (contains? changed-bricks brick-name)
-                      base (when changed? (base-metrics brick-name))]]
+                      base (when comparison (base-metrics brick-name))]]
             (cons (str (brick-label brick)
-                    (when (and changed? (nil? base)) " (new)"))
+                    (when (and comparison (nil? base)) " (new)"))
               (for [column columns]
                 (metric-cell (column-level brick-name column)
                   (str (metrics/column-text column (:metrics m))
@@ -201,9 +253,11 @@
           [(cons "**Average**"
              (for [column columns]
                (metrics/column-text column averages)))]))
+      (when (and comparison (pos? unchanged))
+        (unchanged-text shown unchanged))
       (when (some (fn [{:keys [brick]}]
                     (some #(outlier? (:name brick) %) columns))
-              bricks)
+              shown)
         (str "\n\nBold: " metrics/outlier-std-devs " or more standard"
           " deviations from the mean of all bricks (of all components, for"
           " metrics that only describe components)."))

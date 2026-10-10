@@ -166,3 +166,39 @@
                  :resolved [{:brick {:name "z" :type :component}
                              :metric :forms
                              :message "fixed"}]})))))))
+
+(def ^:private compared
+  (assoc report
+    :violations []
+    :hidden-existing 2
+    :comparison {:base-ref "main" :base-rev "0123456789ab"
+                 :changed-bricks #{"a"}
+                 :base-metrics {"a" {:mean-function-complexity 9}
+                                "b" {:mean-function-complexity 1}}
+                 :resolved []}))
+
+(deftest changed-rows-test
+  (let [html (html-report/render compared)]
+    (is (str/includes? html
+          "<td class=\"num\" title=\"was 9.0\">12.0")
+      "a brick whose value changed is shown")
+    (is (not (str/includes? html "<td class=\"num\">1.0</td>"))
+      "a brick whose values didn't change is not")
+    (is (str/includes? html "<td class=\"num\">6.5</td>")
+      "the average is still of all bricks")
+    (is (str/includes? html
+          "1 unchanged brick not shown. The average is of all bricks."))
+    (is (str/includes? html
+          "No brick changed in this section. The average is of all 2 bricks.")
+      "a section with no changes")))
+
+(deftest hidden-existing-test
+  (let [html (html-report/render
+               (assoc compared :violations
+                 [(assoc (first (:violations report)) :status :new)]))]
+    (is (str/includes? html
+          "2 existing or indirect violations not shown"))
+    (is (not (str/includes? html "<th>Status</th>"))
+      "every violation shown is new"))
+  (is (str/includes? (html-report/render compared)
+        "<p class=\"none\">No new violations.</p>")))

@@ -146,3 +146,20 @@
   (is (str/includes? (github-report/summary (assoc report :violations []
                                               :hidden-warnings 3))
         "### Violations\n\nNo errors.")))
+
+(deftest changed-rows-test
+  (let [summary (github-report/summary
+                  (-> compared
+                    (assoc :violations [(first (:violations compared))]
+                      :hidden-existing 1)))]
+    (is (str/includes? summary "| component a | – | 40 | – | **12.0 (+8.0)** ❌ | – |"))
+    (is (not (str/includes? summary "| base b |"))
+      "a brick whose values didn't change is not shown")
+    (is (str/includes? summary "| **Average** | – | 170 | – | 7.0 | – |")
+      "the average is still of all bricks")
+    (is (str/includes? summary
+          "1 unchanged brick not shown. The average is of all bricks."))
+    (is (str/includes? summary
+          "1 existing or indirect violation not shown"))
+    (is (not (str/includes? summary "| Status |"))
+      "every violation shown is new")))

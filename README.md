@@ -191,8 +191,10 @@ complexity (size and function complexity), modularity (abstractness,
 cohesion, and shared keywords), I/O and mutability (libraries, with a
 table of those more than one brick requires, host interop, and mutable
 state), error handling, and tests. Each has a table of every brick, with
-a row of averages across all bricks. With `--base`, a changed brick's
-values show how much they changed, such as `12 (+3)`. The tables mark each value
+a row of averages across all bricks. With `--base`, each table shows only
+the bricks that are new or whose values in that section changed, with
+how much they changed, such as `12 (+3)`. The average row stays an
+average of all bricks. The tables mark each value
 2 or more standard deviations from the mean of all bricks: the HTML report
 outlines it, and the GitHub report sets it in bold. Afferent coupling,
 instability, and abstractness compare components only, since a base has no
@@ -214,8 +216,10 @@ each violation with a status:
   threshold can move when other bricks change.
 
 With a base, assay fails only on new error-level violations, so a pull
-request is not blocked by problems it didn't introduce. Use
-`--fail-on all` to fail on every error-level violation.
+request is not blocked by problems it didn't introduce, and the reports
+list only new violations, with a count of the rest. Use `--fail-on all`
+to fail on every error-level violation; the reports then list every
+violation with its status, so they show why a run failed.
 
 ## Configuration
 
@@ -317,9 +321,10 @@ HTML report as an artifact.
 - **Pull requests** compare with `origin/<target branch>` and fail only on
   new error-level violations, so a pull request isn't blocked by problems
   it didn't introduce.
-- **Pushes to `main`** compare with the commit before the push, so the
-  summary shows what changed, and use `--fail-on all`, so any error-level
-  violation fails the build.
+- **Pushes to `main`** compare with the commit before the push and fail
+  only on new error-level violations, so the summary shows what the push
+  changed. When that commit is missing, such as after a force push, assay
+  has no base and fails on any error-level violation.
 
 The checkout needs `fetch-depth: 0` so assay can find earlier commits.
 

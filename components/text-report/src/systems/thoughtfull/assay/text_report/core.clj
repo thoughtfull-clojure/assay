@@ -29,8 +29,9 @@
     (plural shown-count (str qualifier "warning"))))
 
 (defn- summary
-  [{:keys [bricks violations comparison hidden-warnings]}]
+  [{:keys [bricks violations comparison hidden-warnings hidden-existing]}]
   (let [{shown true hidden false} (group-by shown? violations)
+        not-new (+ (count hidden) (or hidden-existing 0))
         counts (frequencies (map :level shown))
         qualifier (if comparison "new " "")]
     (str "assay: " (plural (count bricks) "brick") ", "
@@ -38,8 +39,8 @@
       (warnings-text qualifier (counts :warning 0) hidden-warnings)
       (when comparison
         (str ", compared with " (:base-ref comparison)
-          (when (seq hidden)
-            (str " (" (count hidden) " not new, not shown)")))))))
+          (when (pos? not-new)
+            (str " (" not-new " not new, not shown)")))))))
 
 (defn render
   [report]
