@@ -18,7 +18,7 @@ Assay needs:
 With Babashka, add assay and a task to the workspace's `bb.edn`:
 
 ```clojure
-{:deps {systems.thoughtfull/assay {:mvn/version "0.3.0"}}
+{:deps {systems.thoughtfull/assay {:mvn/version "0.3.1"}}
  :tasks
  {assay {:doc "Check code metrics with assay"
          :requires ([systems.thoughtfull.assay.cli.main :as assay])
@@ -29,7 +29,7 @@ With the Clojure CLI, add an alias to `deps.edn`:
 
 ```clojure
 {:aliases
- {:assay {:replace-deps {systems.thoughtfull/assay {:mvn/version "0.3.0"}}
+ {:assay {:replace-deps {systems.thoughtfull/assay {:mvn/version "0.3.1"}}
           :main-opts ["-m" "systems.thoughtfull.assay.cli.main"]}}}
 ```
 
