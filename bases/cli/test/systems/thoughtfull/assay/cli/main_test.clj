@@ -40,7 +40,7 @@
         summary (io/file root "summary.md")]
     (doto (io/file root "assay.edn")
       (io/make-parents)
-      (spit "{:function-thresholds {:complexity [{:rule :max :value 2}]}}"))
+      (spit "{:complexity {:function-complexity {:error 2}}}"))
     (testing "defaults to github format in GitHub Actions"
       (let [[status out] (run ["-w" (str root)]
                            {"GITHUB_ACTIONS" "true"
@@ -74,7 +74,7 @@
 
 (deftest base-test
   (let [root (workspace)
-        config "{:function-thresholds {:complexity [{:rule :max :value 2}]}}"]
+        config "{:complexity {:function-complexity {:error 2}}}"]
     (doto (io/file root "assay.edn")
       (io/make-parents)
       (spit config))
@@ -108,8 +108,7 @@
 
 (deftest warnings-test
   (let [root (workspace)]
-    (configure root (str "{:function-thresholds"
-                      " {:params [{:rule :max :value 0 :level :warning}]}}"))
+    (configure root "{:complexity {:function-params {:warning 0}}}")
     (testing "hidden by default, but counted"
       (let [[status out] (run ["-w" (str root) "-f" "text"] {})]
         (is (= 0 status))
@@ -123,27 +122,32 @@
 (deftest fail-on-new-without-base-test
   (let [root (workspace)]
     (configure root
-      "{:function-thresholds {:complexity [{:rule :max :value 2}]}}")
+      "{:complexity {:function-complexity {:error 2}}}")
     (is (= 1 (first (run ["-w" (str root) "-f" "text" "--fail-on" "new"] {})))
       "without a base, every violation is new")))
 
-(deftest misplaced-rule-test
+(deftest invalid-config-test
   (let [root (workspace)]
+    (configure root "{:io {:broad-catches nil}}")
+    (let [[status out] (run ["-w" (str root) "-f" "text"] {})]
+      (is (= 2 status) "a metric under the wrong section is a usage error")
+      (is (str/includes? out ":broad-catches belongs under :errors")))
     (configure root "{:dependency-rules {:mutable-state nil}}")
-    (is (= 2 (first (run ["-w" (str root) "-f" "text"] {})))
-      "a rule under the wrong group is a usage error")))
+    (let [[status out] (run ["-w" (str root) "-f" "text"] {})]
+      (is (= 2 status))
+      (is (str/includes? out "older version of assay")))))
 
 (deftest config-location-test
   (let [root (workspace)]
     (testing "assay.edn at the workspace root is the default"
       (spit (io/file root "assay.edn")
-        "{:function-thresholds {:complexity [{:rule :max :value 2}]}}")
+        "{:complexity {:function-complexity {:error 2}}}")
       (is (= 1 (first (run ["-w" (str root) "-f" "text"] {})))))
     (testing ".config/assay.edn is not read unless passed with --config"
       (.delete (io/file root "assay.edn"))
       (doto (io/file root ".config/assay.edn")
         (io/make-parents)
-        (spit "{:function-thresholds {:complexity [{:rule :max :value 2}]}}"))
+        (spit "{:complexity {:function-complexity {:error 2}}}"))
       (is (= 0 (first (run ["-w" (str root) "-f" "text"] {}))))
       (is (= 1 (first (run ["-w" (str root) "-f" "text"
                             "-c" (str (io/file root ".config/assay.edn"))]

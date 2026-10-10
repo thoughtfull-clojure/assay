@@ -29,6 +29,16 @@
         interface (str top-namespace "." brick-segment "." interface-ns)]
     (or (= ns interface) (str/starts-with? ns (str interface ".")))))
 
+(defn interface-definitions
+  "The public definitions in sources that are in brick-segment's interface
+  namespaces, each with its source's :ns."
+  [workspace brick-segment sources]
+  (for [{:keys [ns definitions]} sources
+        :when (interface-ns? workspace brick-segment ns)
+        definition definitions
+        :when (not (:private? definition))]
+    (assoc definition :ns ns)))
+
 (defn segments
   "Brick name to its own segment, for every measurement."
   [top-ns measurements]

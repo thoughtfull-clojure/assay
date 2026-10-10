@@ -29,10 +29,38 @@
             "Forms 300 is 50%25%0Ahigh")]
         (github-report/annotations report))))
 
+(deftest finding-annotations-test
+  (let [a {:name "a" :type :component :dir "components/a"}
+        f (fn [metric value limit line]
+            {:kind :function :metric metric :brick a :subject "a/f"
+             :level :warning :value value :limit limit :function-line 3
+             :location {:file "a.clj" :line line :name "f"}})]
+    (is (= [(str "::warning file=a.clj,line=3,title=component a%3A Functions::"
+              "Functions complexity 12 > 10, depth 9 > 8 (line 7) (f)")]
+          (github-report/annotations
+            {:violations [(f :function-complexity 12 10 3)
+                          (f :function-depth 9 8 7)]}))
+      "a function's violations are one annotation, at its definition")
+    (is (= 2 (count (github-report/annotations
+                      {:violations
+                       (for [[n file] [["a" "a.clj"] ["b" "b.clj"]]]
+                         {:metric :library-spread :subject "next.jdbc"
+                          :brick {:name n :type :component} :level :warning
+                          :value 4 :limit 3
+                          :location {:file file :line 1}})})))
+      "a spread library is annotated at each brick's require")))
+
 (deftest summary-test
   (let [summary (github-report/summary report)]
     (is (str/starts-with? summary "## Assay: ws\n\n2 bricks, 1 errors, 1 warnings."))
-    (is (str/includes? summary "| ❌ error | component a | 🟪 Mean function complexity |"))
+    (is (str/includes? summary "| 🟪 Mean function complexity | 1 | 0 |")
+      "the summary grid counts each metric's violations")
+    (is (str/includes? summary
+          (str "<details><summary>Mean function complexity: 1 error</summary>"
+            "\n\n| Level | Brick | Detail | Location |"))
+      "each section lists its violations by metric")
+    (is (str/includes? summary
+          "| ❌ error | component a | 12 is above the maximum of 10 |"))
     (is (str/includes? summary "**12.0** ❌"))
     (is (str/includes? summary "**300** ⚠️"))))
 
@@ -42,8 +70,8 @@
                   (second (re-find (re-pattern (str "(?s)### \\S+ " heading
                                                  "\n(.*?)###"))
                             summary)))]
-    (is (not (str/includes? (section "Dependencies") "| base b |"))
-      "the dependencies table leaves bases out")
+    (is (str/includes? (section "Dependencies") "| base b |")
+      "the dependencies table shows bases")
     (is (str/includes? (section "Modularity") "| base b |"))))
 
 (def ^:private compared
@@ -85,19 +113,19 @@
   (let [summary (github-report/summary
                   (assoc report
                     :violations []
-                    :bricks (for [[i forms] (map-indexed vector
-                                              [10 10 10 10 10 10 10 10 10 100])]
+                    :bricks (for [[i density] (map-indexed vector
+                                                [1 1 2 2 1 2 9])]
                               {:brick {:name (str "b" i) :type :component}
-                               :metrics {:forms forms}})))]
-    (is (str/includes? summary "| **100** |"))
-    (is (= 1 (count (re-seq #"\*\*\d+\*\*" summary))))
+                               :metrics {:interop-density density}})))]
+    (is (str/includes? summary "| **9.0** |"))
+    (is (= 1 (count (re-seq #"\*\*[\d.]+\*\*" summary))))
     (is (str/includes? summary "Bold: 2 or more standard deviations"))))
 
 (deftest shared-libraries-test
   (is (str/includes?
         (github-report/summary
           (assoc report :libraries [{:library "next.jdbc" :bricks ["a" "b"]}]))
-        "**Shared libraries**\n\n| Library | Bricks | Required by |")))
+        "**Shared libraries**\n\n| Library | Bricks | Spread | Required by |")))
 
 (deftest average-row-test
   (is (str/includes? (github-report/summary report) "| **Average** |")))
@@ -109,9 +137,9 @@
                       [{:name "f" :file "components/a/src/a.clj" :line 7
                         :complexity 12 :depth 3 :forms 40 :params 1}])
                     (update :violations conj
-                      {:scope :function
+                      {:kind :function
                        :brick {:name "a" :type :component}
-                       :metric :complexity
+                       :metric :function-complexity
                        :subject "f"
                        :level :error
                        :message "12 is above the maximum of 10"})
@@ -128,18 +156,17 @@
 (deftest violation-marker-test
   (let [summary (github-report/summary
                   (assoc report :violations
-                    [{:scope :dependency :section :errors
+                    [{:kind :count
                       :brick {:name "a" :type :component}
-                      :metric :broad-catch :label "Broad catch"
+                      :metric :broad-catches
                       :level :warning :message "catches Exception"}
-                     {:scope :dependency
+                     {:kind :finding
                       :brick {:name "a" :type :component}
-                      :metric :merge-candidate :label "Merge candidate"
+                      :metric :merge-candidate
                       :level :warning :message "could merge into b"}]))]
-    (is (str/includes? summary "| 🟧 Broad catch |")
-      "a rule violation is marked with its section")
-    (is (str/includes? summary "| 🟦 Merge candidate |")
-      "a violation without a section is a dependency's")))
+    (is (str/includes? summary "| 🟧 Broad catches |")
+      "a violation is marked with its metric's section")
+    (is (str/includes? summary "| 🟩 Merge into |"))))
 
 (deftest brick-annotation-test
   (is (= [(str "::warning file=components/a/deps.edn,line=1,"
@@ -180,10 +207,10 @@
                   (-> compared
                     (assoc :violations [(first (:violations compared))]
                       :hidden-existing 1)))]
-    (is (str/includes? summary "| component a | – | 40 | – | **12.0 (+8.0)** ❌ | – |"))
+    (is (str/includes? summary "| component a | 40 | – | **12.0 (+8.0)** ❌ | – | – | – | – | – |"))
     (is (not (str/includes? summary "| base b |"))
       "a brick whose values didn't change is not shown")
-    (is (str/includes? summary "| **Average** | – | 170 | – | 7.0 | – |")
+    (is (str/includes? summary "| **Average** | 170 | – | 7.0 | – | – | – | – | – |")
       "the average is still of all bricks")
     (is (str/includes? summary
           "1 unchanged brick not shown. The average is of all bricks."))
@@ -205,7 +232,7 @@
 (deftest collapsed-violations-test
   (let [summary (github-report/summary
                   (assoc report :violations (many-violations 25)))
-        [shown more] (str/split summary #"<details><summary>5 more violations</summary>")]
+        [shown more] (str/split summary #"<details><summary>5 more</summary>")]
     (is (some? more))
     (is (re-find #"\| ❌ error \| component b7 \|[^\n]*\n\| ⚠️ warning \| component b24 \|"
           shown))
@@ -214,4 +241,4 @@
     (is (str/includes? more "</details>")))
   (is (not (str/includes? (github-report/summary
                             (assoc report :violations (many-violations 20)))
-             "more violation"))))
+             "more</summary>"))))

@@ -36,6 +36,7 @@
                      {:ns 'g.h :line 6}
                      {:ns 'i.j :line 7}
                      {:ns 'i.k :line 7 :as 'k}
+                     {:ns 'n.o :line 7 :as-alias 'o}
                      {:ns 'l.m :line 8}]}
         (parse/ns-info
           (parse/parse-string
@@ -45,8 +46,11 @@
               "   [c.d :as d :refer [x y]]\n"
               "   e.f\n"
               "   [g.h]\n"
-              "   [i j [k :as k]])\n"
+              "   [i j [k :as k]] [n.o :as-alias o])\n"
               "  (:use l.m)\n"
               "  (:import (java.io File)))\n"
               "(defn f [] 1)")))))
+  (is (= 'a.b (:ns (parse/ns-info (parse/parse-string
+                                    "(ns ^:no-doc ^{:x 1} a.b)"))))
+    "metadata on the namespace name")
   (is (nil? (parse/ns-info (parse/parse-string "(defn f [] 1)")))))

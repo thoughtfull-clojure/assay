@@ -1,15 +1,9 @@
 ;; assay configuration for this workspace, passed with --config by the bb
 ;; assay task and the :run alias. assay's default is assay.edn at the root.
 ;; See README.md.
-{;; Rules for each brick's and each function's metrics, merged over the
- ;; defaults. A metric listed here replaces all of its default rules; []
- ;; disables them.
- :brick-thresholds {}
- :function-thresholds {}
-
- ;; Levels for rule checks: :error, :warning, or nil to turn off. Each
- ;; rule belongs under the key for its report section.
- :dependency-rules {}
- :io-rules {}
- :error-handling-rules {}
- :test-rules {}}
+;;
+;; Each key is a report section, mapping metrics to their thresholds, merged
+;; over the defaults setting by setting, such as
+;; {:complexity {:function-depth {:error 12}}}. A nil threshold turns that
+;; level off; a nil metric turns the metric off.
+{}

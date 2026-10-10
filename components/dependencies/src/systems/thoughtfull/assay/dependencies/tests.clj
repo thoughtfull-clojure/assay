@@ -20,43 +20,44 @@
       target)))
 
 (defn analyze
-  "Brick name to {:untested-interface n}: the component's interface
-  definitions that no test mentions, or nil for a base."
+  "Brick name to {:untested-interface r :untested-definitions n}: the share
+  and number of the component's public interface definitions that no test
+  mentions. A base has neither, and a component without public interface
+  definitions no :untested-interface."
   [{:keys [top-namespace] :as workspace} measurements]
   (let [segments (names/segments top-namespace measurements)
         tested (mentioned measurements)]
     (into {}
       (for [{:keys [brick sources]} measurements
-            :let [own (segments (:name brick))]]
+            :let [own (segments (:name brick))
+                  interface (names/interface-definitions workspace own
+                              sources)
+                  untested (count (remove #(tested [(:ns %) (:name %)])
+                                    interface))]]
         [(:name brick)
-         {:untested-interface
-          (when (= :component (:type brick))
-            (count (for [{:keys [ns definitions]} sources
-                         :when (names/interface-ns? workspace own ns)
-                         {:keys [name]} definitions
-                         :when (not (tested [ns name]))]
-                     name)))}]))))
+         (when (= :component (:type brick))
+           {:untested-interface (when (seq interface)
+                                  (/ untested (double (count interface))))
+            :untested-definitions untested})]))))
 
-(defn violations
-  "A violation for each require, in a brick's tests, of another brick's
-  namespace other than its interface."
-  [level {:keys [workspace bricks]}]
+(defn boundary-crossings
+  "Each require, in a brick's tests, of another brick's source namespace
+  other than its interface. Another brick's test namespaces, such as
+  shared generators, don't count."
+  [{:keys [workspace bricks]}]
   (let [top-ns (:top-namespace workspace)
-        segments (names/segments top-ns bricks)]
+        segments (names/segments top-ns bricks)
+        test-nss (set (keep :ns (mapcat :tests bricks)))]
     (for [{:keys [brick tests]} bricks
           :let [own (segments (:name brick))]
           {:keys [file requires]} tests
           {:keys [ns line]} requires
           :let [s (names/segment top-ns ns)]
           :when (and s (not= s own)
+                  (not (test-nss ns))
                   (not (names/interface-ns? workspace s ns)))]
-      {:scope :dependency
-       :brick brick
-       :metric :test-boundary
-       :label "Test boundary"
+      {:brick brick
        :subject (str file " " ns)
-       :level level
-       :rule {:rule :test-boundary}
        :location {:file file :line line}
        :message (str "requires " ns ", inside " s
                   "; test through its interface instead")})))

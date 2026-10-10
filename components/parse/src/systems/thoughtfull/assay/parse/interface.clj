@@ -34,7 +34,8 @@
 (defn ns-info
   "The ns form of a :forms node as a map of :ns (a symbol), :line, and
   :requires, a vector of {:ns symbol :line n} for each namespace in its
-  :require and :use clauses, with :as (an alias symbol) and :refer (a
-  vector of symbols) when the libspec has them. Returns nil if there is no ns form."
+  :require and :use clauses, with :as and :as-alias (alias symbols) and
+  :refer (a vector of symbols) when the libspec has them. Returns nil if
+  there is no ns form."
   [forms]
   (core/ns-info forms))

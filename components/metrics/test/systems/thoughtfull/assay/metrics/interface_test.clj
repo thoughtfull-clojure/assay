@@ -48,6 +48,14 @@
   (testing "a let without a binding vector nests normally"
     (is (= 3 (depth "(let x (f))")))))
 
+(deftest reader-macro-nesting-depth-test
+  (testing "reader macros that wrap a form add nothing"
+    (is (= 3 (depth "(f @(g x))")))
+    (is (= 3 (depth "(f '(g x))")))
+    (is (= 4 (depth "(f `(g ~(h x)))")) "defn, f, g, h: only the lists count")
+    (is (= 2 (depth "^{:a {:b {:c 1}}} (f x)"))
+      "metadata is not part of the form")))
+
 (deftest params-nesting-depth-test
   (testing "parameter vectors add nothing"
     (is (= 1 (depth "(defn f [{:keys [a] :or {a 1}}] a)")))
@@ -134,30 +142,31 @@
               "(defn simple [x] x)\n"
               "(defn branchy [x] (if x (when x 1) 2))\n")))
     (is (= {:brick {:name "c" :files [file]}
-            :metrics {:files 1
-                      :forms 22
+            :metrics {:forms 22
                       :functions 2
+                      :definitions 2
                       :mean-function-complexity 2.0
                       :mean-function-depth 2.0
                       :mutable-state 0
                       :untyped-errors 0
-                      :catches 0
                       :broad-catches 0
-                      :interop 0
                       :interop-density 0.0
                       :tests 0
                       :assertions-per-test nil
                       :forms-per-test nil
                       :isolation-hazards 0
+                      :hazard-kinds {}
                       :test-ratio 0.0}
             :tests []
             :sources [{:file file :ns (quote c) :requires [] :forms 22
                        :definitions [{:name (quote simple) :line 2
                                       :references #{(quote x)}
+                                      :private? false
                                       :throws? false}
                                      {:name (quote branchy) :line 3
                                       :references (set (map symbol
                                                          ["x" "if" "when"]))
+                                      :private? false
                                       :throws? false}]}]}
           (-> (metrics/measure-brick root {:name "c" :files [file]})
             (dissoc :functions)
@@ -191,21 +200,39 @@
     (is (contains? (:references t) 'a/g))))
 
 (deftest error-handling-test
-  (let [source (measure (str "(ns n)\n"
+  (let [source (measure (str "(ns n (:require [cognitect.anomalies"
+                          " :as-alias anom]))\n"
                           "(defn a [] (throw (ex-info \"x\" {:type ::bad})))\n"
                           "(defn b [] (throw (ex-info \"x\" {:command 1})))\n"
                           "(defn c [m] (throw (ex-info \"x\" m)))\n"
                           "(defn d [] (throw (IllegalStateException. \"x\")))\n"
                           "(defn e [] (try (a) (catch Exception ex (throw ex))\n"
                           "  (catch clojure.lang.ExceptionInfo _ nil)))\n"
-                          "(defn f [] (a))\n"))]
-    (is (= [:typed :untyped :unknown :java :rethrow]
+                          "(defn f [] (a))\n"
+                          "(defn g [] (throw (ex-info \"x\""
+                          " {::anom/category ::anom/fault})))\n"))]
+    (is (= [:typed :untyped :unknown :java :rethrow :typed]
           (map :kind (:throws source))))
     (is (= [["Exception" true] ["clojure.lang.ExceptionInfo" false]]
           (map (juxt :class :broad?) (:catches source))))
-    (is (= [true true true true true false]
+    (is (= [true true true true true false true]
           (map :throws? (:definitions source)))
-      "f only calls a definition that throws")))
+      "f only calls a definition that throws"))
+  (testing "slingshot's throw+"
+    (let [source (measure (str "(defn a [] (throw+ {:type :bad}))\n"
+                            "(defn b [] (throw+ {:code 1}))\n"
+                            "(defn c [e] (throw+ e))\n"))]
+      (is (= [:typed :untyped :rethrow] (map :kind (:throws source))))
+      (is (every? :throws? (:definitions source)))))
+  (testing "what a catch does with what it catches"
+    (is (= [:rethrows :rethrows :logs :continues]
+          (map :handling
+            (:catches
+             (measure (str "(try (f)\n"
+                        "  (catch Exception e (throw (ex-info \"x\" {} e)))\n"
+                        "  (catch Throwable e (throw+ {:type :x}))\n"
+                        "  (catch Exception e (log/error e \"failed\") nil)\n"
+                        "  (catch Object _ :default))"))))))))
 
 (deftest mutable-state-test
   (is (= [{:name 'cache :line 2 :kind :atom}
@@ -225,103 +252,111 @@
     "local atoms and plain values aren't mutable state"))
 
 (deftest columns-test
-  (is (= ["Files" "Forms" "Functions" "Mean function complexity"
+  (is (= ["Forms" "Functions" "Mean function complexity"
           "Mean nesting depth"]
-        (map :label (take 5 metrics/columns))))
+        (map :label (take 4 (:columns (second metrics/sections))))))
   (is (= "2.5"
-        (metrics/column-text (nth metrics/columns 3)
+        (metrics/column-text (nth (:columns (second metrics/sections)) 2)
           {:mean-function-complexity 2.46})))
+  (is (= "patient (1%)"
+        (metrics/column-text {:keys [:merge-candidate]}
+          {:merge-candidate 0.012 :merge-candidate-subject "patient"}))
+    "a value with its subject, as a percentage")
   (is (= "0.33" (metrics/format-value :instability 1/3)))
   (is (= "–" (metrics/format-value :instability nil))))
 
 (deftest averages-test
-  (is (= {:files 1.5
-          :forms 15.0
+  (is (= {:forms 15.0
           :functions 2.0
           :mean-function-complexity 4.0
           :mean-function-depth 3.0
           :afferent 1.0
           :efferent nil
           :instability 0.5
-          :abstractness nil
-          :cohesion nil
-          :shared-keywords nil
-          :libraries nil
-          :shared-libraries nil
-          :mutable-state nil
-          :error-surface nil
-          :untyped-errors nil
-          :catches nil
-          :broad-catches nil
-          :interop nil
-          :interop-density nil
-          :tests nil
-          :assertions-per-test nil
-          :forms-per-test nil
-          :isolation-hazards nil
-          :untested-interface nil
-          :test-ratio nil}
-        (metrics/averages
-          [{:brick {:type :component}
-            :metrics {:files 1 :forms 10 :functions 1
-                      :mean-function-complexity 6.0
-                      :mean-function-depth 4.0
-                      :instability 0.25}
-            :functions [{:complexity 6 :depth 4}]}
-           {:brick {:type :component}
-            :metrics {:files 2 :forms 20 :functions 3
-                      :mean-function-complexity 2.0
-                      :mean-function-depth 2.0
-                      :instability 0.75 :afferent 1}
-            :functions [{:complexity 1 :depth 2} {:complexity 2 :depth 2}
-                        {:complexity 3 :depth 2}]}]))
+          :cohesion nil}
+        (select-keys
+          (metrics/averages
+            [{:brick {:type :component}
+              :metrics {:files 1 :forms 10 :functions 1
+                        :mean-function-complexity 6.0
+                        :mean-function-depth 4.0
+                        :instability 0.25}
+              :functions [{:complexity 6 :depth 4}]}
+             {:brick {:type :component}
+              :metrics {:files 2 :forms 20 :functions 3
+                        :mean-function-complexity 2.0
+                        :mean-function-depth 2.0
+                        :instability 0.75 :afferent 1}
+              :functions [{:complexity 1 :depth 2} {:complexity 2 :depth 2}
+                          {:complexity 3 :depth 2}]}])
+          [:forms :functions :mean-function-complexity
+           :mean-function-depth :afferent :efferent :instability :cohesion]))
     "the mean of each brick's value, skipping bricks without one")
-  (is (= "1.5" (metrics/format-value :files 1.5)))
-  (is (= "2" (metrics/format-value :files 2.0))))
+  (is (= (set (map :key metrics/metrics))
+        (set (keys (metrics/averages []))))
+    "every metric")
+  (is (= {:mutable-state 1.0}
+        (select-keys (metrics/averages
+                       [{:brick {:type :component} :metrics {:mutable-state 1}}
+                        {:brick {:type :base} :metrics {:mutable-state 5}}])
+          [:mutable-state]))
+    "of the brick types the metric checks")
+  (is (= "1.5" (metrics/format-value :forms 1.5)))
+  (is (= "2" (metrics/format-value :forms 2.0))))
 
 (deftest outliers-test
-  (let [bricks (fn [& forms]
-                 (map-indexed (fn [i n]
-                                {:brick {:name (str "b" i)}
-                                 :metrics {:forms n :abstractness nil}})
-                   forms))]
-    (testing "values at least k standard deviations from the mean, either way"
-      (let [o (metrics/outliers (bricks 10 10 10 10 10 10 10 10 10 100) 2)]
-        (is (= [["b9" :forms]] (keys o)))
-        (is (= 3.0 (:z (o ["b9" :forms]))))
-        (is (= 19.0 (:mean (o ["b9" :forms])))))
-      (is (= [["b9" :forms]]
-            (keys (metrics/outliers (bricks 100 100 100 100 100 100 100 100
-                                      100 10)
-                    2)))))
+  (let [bricks (fn [k & values]
+                 (map-indexed (fn [i v]
+                                {:brick {:name (str "b" i) :type :component}
+                                 :metrics (assoc {:forms 10} k v)})
+                   values))]
+    (testing "values at least k sample standard deviations past the others"
+      (let [o (metrics/outliers (bricks :interop-density 1 1 2 2 1 2 9) 2)]
+        (is (= [["b6" :interop-density]] (keys o)))
+        (is (= 1.5 (:mean (o ["b6" :interop-density]))))
+        (is (< 13.69 (:z (o ["b6" :interop-density])) 13.70))))
+    (testing "only in the metric's direction"
+      (is (empty? (metrics/outliers (bricks :interop-density 9 9 8 8 9 8 1)
+                    2))
+        "low interop density is fine")
+      (is (= [["b6" :test-ratio]]
+            (keys (metrics/outliers (bricks :test-ratio 9 9 8 8 9 8 1) 2)))
+        "low test ratio is not"))
+    (testing "only ratios, densities, and means"
+      (is (empty? (metrics/outliers (bricks :forms 10 10 10 10 10 10 900)
+                    2))))
     (testing "no outliers without variation or with too few values"
-      (is (empty? (metrics/outliers (bricks 5 5 5 5) 2)))
-      (is (empty? (metrics/outliers (bricks 1 100) 0.5))))
-    (testing "bases don't count for metrics that only describe components"
+      (is (empty? (metrics/outliers (bricks :interop-density 5 5 5 5) 2)))
+      (is (empty? (metrics/outliers (bricks :interop-density 1 1 100) 0.5))))
+    (testing "only the bricks the metric applies to"
       (let [measurements (concat
-                           (for [i (range 9)]
-                             {:brick {:name (str "c" i) :type :component}
-                              :metrics {:abstractness 0.9 :forms 10}})
-                           [{:brick {:name "c9" :type :component}
-                             :metrics {:abstractness 0.8 :forms 10}}
-                            {:brick {:name "base" :type :base}
-                             :metrics {:abstractness 0.0 :forms 100}}])
-            o (metrics/outliers measurements 2)]
-        (is (= #{["c9" :abstractness] ["base" :forms]} (set (keys o))))
-        (is (= :components (:peers (o ["c9" :abstractness]))))
-        (is (= :bricks (:peers (o ["base" :forms]))))
-        (is (= 0.89 (Double/parseDouble
-                      (format "%.2f" (:abstractness (metrics/averages
-                                                      measurements))))))))))
+                           (bricks :untested-interface 0.1 0.2 0.1 0.2)
+                           [{:brick {:name "small" :type :component}
+                             :metrics {:untested-interface 1.0
+                                       :definitions 9}}])
+            gated (map #(assoc-in % [:metrics :definitions] 10)
+                    measurements)]
+        (is (empty? (metrics/outliers (map #(update % :metrics dissoc
+                                              :definitions)
+                                        (butlast gated))
+                      2)))
+        (is (empty? (metrics/outliers (concat (butlast gated)
+                                        [(last measurements)])
+                      2))
+          "below the gate, not outlined")
+        (is (= {:peers :components}
+              (select-keys ((metrics/outliers gated 2)
+                            ["small" :untested-interface])
+                [:peers])))))))
 
 (deftest section-measurements-test
   (let [measurements [{:brick {:name "c" :type :component}}
                       {:brick {:name "b" :type :base}}]
         section (fn [k] (first (filter #(= k (:key %)) metrics/sections)))]
-    (is (= ["c"] (map (comp :name :brick)
-                   (metrics/section-measurements (section :dependencies)
-                     measurements)))
-      "the dependencies table leaves bases out")
+    (is (= ["c" "b"] (map (comp :name :brick)
+                       (metrics/section-measurements (section :dependencies)
+                         measurements)))
+      "every table shows bases")
     (is (= ["c" "b"] (map (comp :name :brick)
                        (metrics/section-measurements (section :modularity)
                          measurements))))))
@@ -336,10 +371,18 @@
 
 (deftest definitions-test
   (is (= [{:name 'labels :line 1 :references #{'metrics/metrics 'into}
-           :throws? false}
-          {:name 'f :line 2 :references #{'labels} :throws? false}]
+           :private? true :throws? false}
+          {:name 'f :line 2 :references #{'labels} :private? true
+           :throws? false}]
         (:definitions
          (measure "(def ^:private labels (into {} metrics/metrics))\n(defn ^:private f [] labels)"))))
+  (is (= [true true false false]
+        (map :private?
+          (:definitions
+           (measure (str "(defn- a [] 1)\n"
+                      "(def ^{:private true :doc \"x\"} b 1)\n"
+                      "(def ^{:private false} c 1)\n"
+                      "(defn ^:dynamic d [] 1)"))))))
   (is (= "f" (-> (measure "(defn ^:private f [] 1)") :functions first :name))
     "metadata isn't part of a function's name"))
 
@@ -348,7 +391,14 @@
         (:keywords (measure (str "(ns foo (:require [a :as b]))\n"
                               "(defn f [{:keys [id]}] {:id id :name 1"
                               " :x/qualified 2})"))))
-    "data keywords only: not the ns form or syntax like :keys"))
+    "data keywords only: not the ns form or syntax like :keys")
+  (is (= #{:foo/own :a/aliased :c.d/as-aliased :zz/unknown :p/id}
+        (:keywords (measure (str "(ns foo (:require [a :as b]"
+                              " [c.d :as-alias d]))\n"
+                              "[::own ::b/aliased ::d/as-aliased ::zz/unknown"
+                              " #:p{:id 1}]"))))
+    (str "auto-resolved keywords resolve in the file's namespace and its"
+      " aliases; an unknown alias stays as written")))
 
 (deftest fragments-test
   (let [big (str "(let [a 1 b 2 c 3 d 4 e 5] (+ a b c d e) (* a b c d e))")
@@ -365,6 +415,6 @@
 
 (deftest label-test
   (is (= "Forms" (metrics/label {:metric :forms})))
-  (is (= "Parameters" (metrics/label {:scope :function :metric :params})))
+  (is (= "Complex functions" (metrics/label {:metric :function-complexity})))
   (is (= "Custom" (metrics/label {:metric :forms :label "Custom"})))
   (is (= "mystery" (metrics/label {:metric :mystery}))))

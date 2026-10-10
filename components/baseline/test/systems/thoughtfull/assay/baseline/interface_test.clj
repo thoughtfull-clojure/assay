@@ -12,7 +12,8 @@
   [name metric]
   {:brick {:name name :type :component}
    :metric metric
-   :rule {:rule :max :value 1}
+   :kind :brick
+   :direction :max
    :level :error})
 
 (deftest changed-bricks-test
@@ -61,10 +62,10 @@
 
 (deftest function-violation-test
   (let [f-violation (fn [subject]
-                      {:scope :function
+                      {:kind :function
+                       :direction :max
                        :brick {:name "a" :type :component}
-                       :metric :complexity
-                       :rule {:rule :max :value 10}
+                       :metric :function-complexity
                        :subject subject
                        :level :error})
         base {:bricks [{:brick {:name "a"}
@@ -80,10 +81,10 @@
 
 (deftest worsened-function-test
   (let [f-violation (fn [subject value]
-                      {:scope :function
+                      {:kind :function
+                       :direction :max
                        :brick {:name "a" :type :component}
-                       :metric :complexity
-                       :rule {:rule :max :value 10}
+                       :metric :function-complexity
                        :subject subject
                        :value value
                        :level :error

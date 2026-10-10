@@ -58,7 +58,7 @@ lint                            # lint (clj-kondo)
 fmt                             # format (cljfmt)
 bb assay --format text          # run assay on itself
 devenv test                     # poly check, tests, and all Git hooks
-bb sample-report                # regenerate docs/sample-report.html
+bb sample-report                # regenerate the sample reports in docs/
 clojure -T:build jar            # build the Clojars jar (see build.clj)
 ```
 

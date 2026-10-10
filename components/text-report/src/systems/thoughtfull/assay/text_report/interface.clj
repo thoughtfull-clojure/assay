@@ -8,7 +8,10 @@
    [systems.thoughtfull.assay.text-report.core :as core]))
 
 (defn render
-  "One line per violation, then a summary line. When the report has a
-  comparison, only violations that a change introduced are listed."
+  "A heading for each report section with violations, then a line for
+  each finding (see thresholds/rows), most severe first: a function's
+  violations, across its metrics, are one line. Then a summary line,
+  counting findings. When the report has a comparison, only findings
+  that a change introduced are listed."
   [report]
   (core/render report))

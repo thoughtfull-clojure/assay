@@ -32,18 +32,21 @@
     (n/sexpr node)))
 
 (defn- libspec-options
-  "The :as alias and :refer symbols of a libspec's options, when present."
+  "The :as and :as-alias aliases and :refer symbols of a libspec's options,
+  when present."
   [option-nodes]
   (let [options (into {}
                   (for [[k v] (partition 2 option-nodes)
                         :when (keyword? (token-value k))]
                     [(token-value k) v]))
         alias (some-> (options :as) token-value)
+        as-alias (some-> (options :as-alias) token-value)
         refer (when-let [v (options :refer)]
                 (when (= :vector (n/tag v))
                   (vec (filter symbol? (map token-value (code-children v))))))]
     (cond-> {}
       (symbol? alias) (assoc :as alias)
+      (symbol? as-alias) (assoc :as-alias as-alias)
       (seq refer) (assoc :refer refer))))
 
 (defn- libspec-entries
@@ -74,11 +77,18 @@
               :when prefix]
           (update entry :ns #(symbol (str prefix "." %))))))))
 
+(defn- unwrap-meta
+  "The node that metadata such as ^:no-doc is attached to, or node."
+  [node]
+  (if (= :meta (some-> node n/tag))
+    (recur (last (code-children node)))
+    node))
+
 (defn ns-info
   [forms]
   (when-let [ns-form (first (filter #(= "ns" (head-symbol %))
                               (code-children forms)))]
-    {:ns (token-value (second (code-children ns-form)))
+    {:ns (token-value (unwrap-meta (second (code-children ns-form))))
      :line (:row (meta ns-form))
      :requires (vec
                  (for [clause (code-children ns-form)

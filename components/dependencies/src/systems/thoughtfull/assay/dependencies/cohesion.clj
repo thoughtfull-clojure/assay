@@ -40,12 +40,15 @@
        :name target-name})))
 
 (defn- cohesion
+  "A brick's :cohesion and :workspace-references, the references it is
+  computed from."
   [top-ns own refs]
   (let [workspace-refs (keep #(names/segment top-ns (:ns %)) refs)
         internal (count (filter #{own} workspace-refs))
         total (count workspace-refs)]
-    (when (pos? total)
-      (/ internal (double total)))))
+    {:cohesion (when (pos? total)
+                 (/ internal (double total)))
+     :workspace-references total}))
 
 (defn analyze
   "Cohesion for each brick, by name, and :used, the set of [segment name]
@@ -67,4 +70,5 @@
                       :let [brick-name (:name brick)
                             own (segments brick-name)
                             refs (refs-by-brick brick-name)]]
-                  [brick-name {:cohesion (cohesion top-namespace own refs)}]))}))
+                  [brick-name (when (= :component (:type brick))
+                                (cohesion top-namespace own refs))]))}))
