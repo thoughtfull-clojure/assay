@@ -13,6 +13,8 @@ let
 
   # Vendored upstream files stay byte-for-byte as released.
   vendored = [ "^\\.config/vale/Google/" ];
+  # Generated reports, which the Markdown checks don't apply to.
+  generated = [ "^docs/sample-github-summary\\.md$" ];
 in
 {
   languages.java = {
@@ -69,6 +71,7 @@ in
       enable = true;
       settings.configPath = valeConfig;
       types = [ "markdown" ];
+      excludes = generated;
     };
 
     gitlint = {
@@ -105,11 +108,13 @@ in
     markdownlint = {
       enable = true;
       entry = "${pkgs.markdownlint-cli}/bin/markdownlint --config ${markdownlintConfig}";
+      excludes = generated;
     };
     lychee = {
       enable = true;
       settings.configPath = lycheeConfig;
       types = [ "markdown" ];
+      excludes = generated;
     };
 
     # Nix

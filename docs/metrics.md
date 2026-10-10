@@ -20,9 +20,10 @@ Some habits make the metrics useful:
 - **Watch the trend.** With `--base`, assay shows what a change made worse.
   A function whose complexity went from 4 to 9 in one pull request deserves
   more attention than one that has sat at 11 for a year.
-- **Compare bricks with their peers.** The `:std-devs` rule flags a brick
-  that stands out from the others of its type, which suits metrics where
-  no absolute limit makes sense, such as size.
+- **Compare bricks with their peers.** A `{:std-devs k}` threshold flags a
+  brick that stands out from the other bricks its metric checks, which
+  suits metrics where no absolute limit makes sense, such as the size of
+  tests.
 - **Treat warnings as a to-do list.** Warnings never fail a run. Use them
   to pick refactoring work, and keep errors for limits you want enforced.
 
@@ -34,8 +35,8 @@ have to fix them all before you start:
 1. Run `bb assay --warnings` and read the report to see where the workspace
    stands.
 2. Adjust the thresholds in `assay.edn` to fit the code you consider
-   acceptable. Make a rule a warning rather than turning it off when you
-   still want to see it.
+   acceptable. Make a threshold a warning rather than turning it off when
+   you still want to see it.
 3. Run assay with `--base` in the Git hook and in CI, so that only new
    violations fail. The existing ones stay visible in the report.
 4. Fix existing violations when you work in that code anyway, and tighten
@@ -44,8 +45,10 @@ have to fix them all before you start:
 ## Function metrics
 
 Function metrics point at code that is hard to read, test, or change.
-Assay reports each violation with the function's location, so you can go
-straight to it.
+Assay reports each function past a threshold once, with every threshold
+it's past and its location, so you can go straight to it. In the
+complexity table, they're the complex, deep, long, and many-parameter
+functions columns.
 
 ### Complexity
 
@@ -81,7 +84,7 @@ To flatten a function:
 - Use `->`, `->>`, or `as->` for a chain of transformations.
 - Name intermediate values in a `let`. Assay starts each binding value
   again at depth 1, so a `let` that names the steps of a computation
-  reads as flat as it is.
+  reads as flat as it is. Reader macros such as `@` don't add a level.
 - Extract a deeply nested anonymous function into a named one.
 
 ### Forms
@@ -117,7 +120,7 @@ the order. See connascence of position below.
 Brick metrics describe a brick as a whole. Few of them have a right value,
 so compare them with the brick's peers and with the brick's history.
 
-### Size: files, forms, and functions
+### Size: forms and functions
 
 Size alone isn't a problem, but a large brick is more likely to hold
 several responsibilities. When a brick grows well past its peers, look for
@@ -134,8 +137,9 @@ mean its data needs a better shape, so that the cases go away rather than
 move.
 
 The report outlines a brick whose mean stands out from its peers, and a
-`:std-devs` rule can flag one. A rising mean, which `--base` shows, means
-a brick getting harder to work in over time.
+`{:std-devs k}` threshold can flag one. A mean of a few functions says
+little, so only bricks with at least 5 functions compare. A rising mean,
+which `--base` shows, means a brick getting harder to work in over time.
 
 ### Mean nesting depth
 
@@ -146,15 +150,16 @@ functions.
 
 ### Outliers
 
-The report's brick tables mark any value that is 2 or more standard deviations
-from the mean of all bricks, in either direction: the HTML report outlines
-it, and the GitHub report sets it in bold. Afferent coupling, instability,
-abstractness, and cohesion compare components only, since every base has
-no interface and no dependents, and is glue by design. A marked value isn't a
+The report's brick tables mark a ratio, density, or mean that is 2 or
+more standard deviations worse than the mean of the other bricks the
+metric checks: the HTML report outlines it, and the GitHub report sets it
+in bold. Worse means in the direction the metric flags, so a low interop
+density is never marked, and a low test ratio is. Counts aren't marked,
+since a larger brick has more of everything. A marked value isn't a
 violation. It shows where a brick differs from the rest of the workspace,
-which is worth understanding: a brick much larger than the others, or with
-far more dependents, may be doing more than its
-share.
+which is worth understanding: a component with far more untested
+interface than the others, or a much denser use of interop, may be doing
+more than its share.
 
 ## Dependency metrics
 
@@ -182,14 +187,14 @@ wire components together.
 Instability, `Ce / (Ca + Ce)`, combines the two. A brick near `0` has many
 dependents and few dependencies: it's stable, because it's hard to change.
 A brick near `1` depends on others and nothing depends on it: it's easy to
-change. Nothing can depend on a base, so every base is at `1`, and the
-dependencies table leaves bases out. The graph shows what each base
-depends on.
+change. Nothing can depend on a base, so every base is at `1`, and its
+instability shows as a dash.
 
 The Stable Dependencies Principle says to depend in the direction of
 stability, so that hard-to-change bricks never rely on easy-to-change
-ones. Assay flags a brick that depends on a less stable brick, and draws
-that edge in red. To fix one:
+ones. Assay flags each dependency on a brick whose instability is higher
+by more than 0.1, by default, and draws that edge in red. A smaller gap
+is noise: two bricks at 0.086 and 0.088 are equally stable. To fix one:
 
 - Move the part that the stable brick needs into a new component that
   both bricks can depend on.
@@ -199,21 +204,37 @@ that edge in red. To fix one:
 - Ask whether the stable brick should depend on it at all. Sometimes the
   call belongs in a base that wires the two together.
 
-### Abstractness
+### Abstractness and main-sequence distance
 
 Abstractness measures how much of a component sits behind its interface,
-by counting definitions. A small interface over a large implementation
-hides most of its code, so the implementation can change without affecting
-other bricks.
+by counting its public definitions. A small interface over a large
+implementation hides most of its code, so the implementation can change
+without affecting other bricks.
 
 Low abstractness means the interface is large compared with what it hides.
 At `0.5`, each interface definition hides only one more, so the component
 is a thin layer, a shallow module in John Ousterhout's terms. Either the
 interface namespace holds implementation code, which belongs in an
 implementation namespace, or the component exposes more than its callers
-need, or it does too little to earn its own brick. Abstractness matters
-most for stable components: a brick with many dependents and a large
-interface is hard to change in any way.
+need, or it does too little to earn its own brick.
+
+Abstractness matters most for stable components: a brick with many
+dependents and a large interface is hard to change in any way. A thin
+wrapper that nothing much depends on is fine. Main-sequence distance,
+`|abstractness + instability - 1|`, weighs the two, after Robert C.
+Martin. Near `0`, the two balance. Near `1` is one of two problems, which
+the cell's tooltip names:
+
+- **Stable and concrete**: much depends on the component, and its
+  interface hides little, so any change ripples. Hide more behind a
+  smaller interface.
+- **Abstract and unstable**: a component with a small interface over a
+  lot of code that little depends on. Ask whether it still earns its
+  place.
+
+By default, assay warns about a component above `0.7` with at least 10
+definitions. Smaller components have too few definitions for the ratio
+to mean much.
 
 ### Merge candidates
 
@@ -221,7 +242,9 @@ Every brick costs something: an interface to keep, a place in the
 dependency graph, and one more thing to name and find. A small component
 that only one other component uses may not repay that cost, and could live
 inside the component that uses it. Assay warns about a component whose only
-dependent is another component at least four times its size, by default.
+dependent is another component more than four times its size, by default.
+The merge into column names that component, and the size as a share of
+it, such as `patient (1%)`.
 
 The warning asks a question rather than answering it. Merge the two when
 the small component exists only to serve the larger one. Keep it separate
@@ -243,7 +266,7 @@ calls change amplification.
 
 Assay reads the last 12 months of history by default and warns about a
 pair with no dependency path between them that shares at least 5 commits,
-covering at least half of the less changed brick's commits. It leaves out
+covering more than half of the less changed brick's commits. It leaves out
 commits that touch more than 5 bricks, since a reformat or a rename
 across the workspace says nothing about coupling. The graph joins each
 pair with a dotted amber line.
@@ -267,22 +290,24 @@ Cohesion metrics show whether a brick's parts belong together.
 
 ### Cohesion
 
-Cohesion is the share of a brick's references to workspace code that point
-inside the brick. A low value means the brick mostly calls other bricks.
-That's expected of a base, but a component that is mostly glue may not
-earn its place. Consider moving its logic into the bricks it calls, or
-merging it with the brick it uses most. By default, a component below
-`0.5` gets a warning. For a base, read it the other way:
-high cohesion means the base does work of its own, which usually belongs
-in a component. Averages and outliers compare components only.
+Cohesion is the share of a component's references to workspace code that
+point inside the component. A low value means it mostly calls other
+bricks. A component that is mostly glue may not earn its place. Consider
+moving its logic into the bricks it calls, or merging it with the brick it
+uses most. By default, a component below `0.5` gets a warning, when it has
+at least 10 workspace references to go on. Bases are glue by design, so
+assay doesn't measure their cohesion.
 
 ### Shared keywords
 
-Shared keywords count the keywords a brick uses that another brick also
-uses. Most are map keys that both bricks must agree on, which is
-connascence of meaning. Passing maps between bricks is normal in Clojure,
-so this is off by default, but a high count shows where a change to a data
-shape could ripple. To make those agreements explicit:
+Shared keywords count the qualified keywords a brick uses that another
+brick also uses, such as `:patient/id`. Most are map keys that both bricks
+must agree on, which is connascence of meaning. Unqualified keywords, such
+as `:id`, or a query library's `:select`, are too generic to say which
+bricks agree on what, so they don't count. Passing maps between bricks is
+normal in Clojure, so this has no default threshold, but a high count
+shows where a change to a data shape could ripple. To make those
+agreements explicit:
 
 - Use namespaced keywords, so each key has one owning brick.
 - Describe the shape with a spec or schema in the owning brick's interface.
@@ -298,18 +323,19 @@ and at state that code hides from the functions that use it.
 ### Library spread
 
 For each library outside the workspace, assay counts the bricks that
-require it, and by default warns at each require of a library that more
-than one brick requires. When one brick wraps a library, you can upgrade
+require it, and by default warns about a library that more than 3 bricks
+require. When one brick wraps a library, you can upgrade
 it, replace it, or fake it in tests in one place. A database driver that
 four bricks require means four bricks know the schema, and a missing
 gateway component.
 
 To fix it, give the library one owner: a component whose interface offers
 what the other bricks need, in their terms rather than the library's. Some
-libraries are fine anywhere: a logging library, say, or a small utility.
-Raise `:max-bricks`, or accept the warnings, for those.
+libraries are fine anywhere: a logging library, say, or a date and time
+library. Add those to the `:allow` setting of `:library-spread`, such as
+`{:io {:library-spread {:allow #{"java-time"}}}}`.
 
-### Host interop
+### Interop density
 
 Java interop couples code to the host: method calls, field access,
 constructors, and static members such as `System/getenv`. A component
@@ -318,9 +344,11 @@ through domain logic is harder to test, harder to read as Clojure, and
 harder to port to another host, such as ClojureScript.
 
 Interop density, interop forms per 100 forms, compares bricks of
-different sizes. A brick that stands out is worth a look: move its
-interop behind a small set of functions, or into a component whose job
-is the Java API, so the rest works with Clojure data.
+different sizes. By default, assay warns about a component above 5. A
+component that stands out is worth a look: move its interop behind a
+small set of functions, or into a component whose job is the Java API, so
+the rest works with Clojure data. A component that wraps a Java API, or a
+user interface over JavaScript, can take a higher threshold.
 
 ### Mutable state
 
@@ -340,12 +368,14 @@ count, since they're the imperative shell where state belongs.
 
 ### Error surface
 
-Error surface counts a component's interface definitions that can throw,
-because their body throws or because something they call does, in any
-brick. Every one is a failure each caller has to be ready for. John
-Ousterhout's advice is to define errors out of existence: an interface
-that returns `nil` for a missing key, or treats deleting what isn't there
-as done, has fewer errors for callers to handle.
+Error surface is the share of a component's public interface definitions
+that can throw, because their body throws, with `throw` or slingshot's
+`throw+`, or because something they call does, in any brick. The cell's
+tooltip gives the count, such as 16 of 41. Each of those is a failure
+every caller has to be ready for. John Ousterhout's advice is to define
+errors out of existence: an interface that returns `nil` for a missing
+key, or treats deleting what isn't there as done, has fewer errors for
+callers to handle.
 
 To shrink it, handle failures inside the component where it knows what
 they mean, and make the remaining ones part of the interface's contract
@@ -365,20 +395,24 @@ Throw `ex-info` with a `:type` key, ideally namespaced, such as
 types a component throws are part of its interface, like its functions'
 names.
 
-### Catches and broad catches
+### Broad catches
 
 Catching belongs where code can handle the failure, which is usually at
 the edges: a base that turns errors into exit codes or HTTP responses. A
 component that catches `Exception`, `RuntimeException`, `Throwable`, or
-`Object` decides for every caller what any failure means, including ones
-it didn't expect, such as a bug. Assay warns about broad catches in
-components.
+`Object` and carries on decides for every caller what any failure means,
+including ones it didn't expect, such as a bug. Assay warns about broad
+catches in components, and says whether each logs the failure or drops
+it silently.
 
 Catch the specific failure you can handle, such as
 `clojure.lang.ExceptionInfo` with a known `:type`, and let the rest reach
 code that knows what to do. A component that wraps a library sometimes
-has to catch broadly, to turn the library's exceptions into its own;
-then rethrow them as typed `ex-info` with the original as the cause.
+has to catch broadly, to turn the library's exceptions into its own; a
+catch that rethrows, such as a typed `ex-info` with the original as the
+cause, doesn't count. A worker loop that must survive any failure is the
+other usual exception: keep its catch at the top of the loop, in one
+place.
 
 ## Test metrics
 
@@ -396,20 +430,21 @@ check one thing, which makes it slow to read and easy to break. Split it
 into tests that each check one behavior, with names that say which, and
 move shared setup into functions.
 
-By default, assay warns about a brick whose mean, of either, is more
-than 2 standard deviations above the mean of the other components. Bases
-have tests too, and compare with the components, since a workspace
-usually has too few bases to compare with each other. What
-counts as a big test differs between workspaces, so the limit comes from
-the workspace's own tests.
+By default, assay warns about a component whose mean, of either, is more
+than 2 standard deviations above the mean of the other components with at
+least 10 tests. A mean of fewer tests says little. What counts as a big
+test differs between workspaces, so the limit comes from the workspace's
+own tests.
 
 ### Untested interface
 
 An interface definition that no test anywhere in the workspace mentions
 has no test at all, not even an indirect one through another brick. The
 interface is what other bricks rely on, so it's where tests matter
-most. Add a test through the interface, or, if nothing uses the
-definition, remove it.
+most. Untested interface is the share of a component's public interface
+definitions with no test, and by default, assay warns about a component
+above half, when it has at least 10 definitions. Add a test through the
+interface, or, if nothing uses the definition, remove it.
 
 ### Isolation hazards
 
@@ -420,15 +455,17 @@ test namespace carries state from one test to the next. `Thread/sleep`
 makes a test depend on timing, so it's slow, and flaky when the machine
 is busy. Pass dependencies in as arguments instead of redefining them,
 create state inside each test, and wait on a condition rather than a
-duration.
+duration. The cell's tooltip counts each kind. Assay has no threshold for
+them; a linter is the place to forbid `Thread/sleep` in tests.
 
-### Test boundary
+### Boundary crossings
 
 A test that requires another brick's implementation namespace, rather
 than its interface, breaks whenever that implementation changes, even
 when its interface hasn't. It also tests the other brick from the wrong
 side. Assay warns about each such require. Test through the interface,
-or move the test to the brick it tests.
+or move the test to the brick it tests. Requiring another brick's test
+namespace, such as shared generators, isn't a crossing.
 
 ### Test ratio
 
@@ -458,4 +495,5 @@ into one brick's interface, or into a new component that both use.
 Not every duplicate should become shared code. When the copies serve
 different purposes and are likely to change for different reasons, joining
 them couples bricks that were independent. In that case, leave them, or
-raise `:min-forms` so that only larger duplicates trigger the rule.
+raise the `:duplicate-code` threshold so that only larger duplicates
+count.

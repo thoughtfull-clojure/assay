@@ -30,3 +30,4 @@ Tornhill
 (?i)interop
 Ctrl
 resizable
+[Tt]ooltips?

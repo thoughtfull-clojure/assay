@@ -7,7 +7,65 @@ and assay follows [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Added
+
+- A sample GitHub job summary, `docs/sample-github-summary.md`, beside the
+  sample HTML report. `bb sample-report` regenerates both.
+- `:allow` for library spread, a set of libraries that don't count.
+- Slingshot's `throw+` counts as a throw, typed by its map's `:type`.
+- Cell tooltips explain values, such as how many interface definitions
+  can throw, and which side of the main sequence a component is on.
+
 ### Changed
+
+- **Breaking:** the configuration follows the report's layout. Its keys
+  are the report's categories (`:dependencies`, `:complexity`,
+  `:modularity`, `:io`, `:errors`, `:tests`), each mapping metrics to a
+  `:warning` and an `:error` threshold and any options, such as
+  `{:complexity {:function-depth {:warning 8 :error 12}}}`. Each metric
+  knows whether it flags high or low values and which brick types it
+  checks, so the configuration doesn't say. Settings merge one by one
+  over the defaults, and `nil` turns a level or a metric off. The old
+  `:function-thresholds`, `:brick-thresholds`, and `:*-rules` keys are a
+  usage error, as are unknown or misplaced metrics.
+- Every rule is a column, so every violation marks a cell: unstable
+  dependencies, positional interface, and co-change under dependencies;
+  complex, deep, long, and many-parameter functions under complexity;
+  main-sequence distance, duplicated forms, and merge into under
+  modularity; spread libraries under I/O; and boundary crossings under
+  tests. Stable dependencies is now unstable dependencies, connascence
+  of position is positional interface, broad catch is broad catches,
+  test boundary is boundary crossings, and merge candidates is merge
+  into.
+- The reports open with a summary of each metric's violations, and list
+  each category's violations under its table, one row per finding: a
+  function past several limits is one row, at its definition, and a
+  duplicate is one row with both copies. The text report groups its
+  lines the same way. Column headers and legends give each metric's
+  thresholds, and the thresholds table mirrors the configuration.
+- Defaults: unstable dependencies need an instability gap of more than
+  0.1, positional interface and many-parameter functions allow 4,
+  library spread allows 3 bricks, and main-sequence distance (warning
+  above 0.7) replaces the abstractness rule. Untyped errors, interop
+  density, and untested interface (a share, warning above half) have
+  rules now.
+- Limits are strict: a duplicate of exactly 30 forms, or a co-change
+  strength of exactly 0.5, isn't flagged.
+- Abstractness, error surface, and untested interface count only public
+  interface definitions; error surface and untested interface are
+  shares of them. Shared keywords count only qualified keywords.
+  Cohesion measures components only.
+- Assay checks means and shares only for bricks with enough to go on: 5
+  functions for the function means, 10 tests for the means per test, 10
+  definitions for main-sequence distance and untested interface, and 10
+  workspace references for cohesion.
+- Outlines mark only ratios, densities, and means, only when worse, and
+  with the statistic `{:std-devs k}` uses: the sample standard deviation
+  of the other bricks the metric checks.
+- The dependencies table shows bases.
+- Broad catches leave out catches that rethrow, and say whether a catch
+  logs or carries on silently. Boundary crossings leave out requires of
+  another brick's test namespaces.
 
 - With `--base`, the reports show only what the change affects: each
   metric table lists only the bricks that are new or changed in that
@@ -19,6 +77,25 @@ and assay follows [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.htm
 - The HTML report's dependency graph sits in a taller, resizable frame
   with pan, zoom, fit, and full screen controls, so large workspaces stay
   readable.
+
+### Removed
+
+- The files, host interop, catches, and shared libraries columns. The
+  shared libraries table remains, and marks spread libraries.
+
+### Fixed
+
+- An `ns` form with metadata on its name, such as `(ns ^:no-doc a.b)`,
+  had no namespace, so interface, cohesion, and test boundary checks left
+  its file out.
+- Auto-resolved keywords, `::k` and `::alias/k`, including `:as-alias`
+  aliases, resolve to their namespaces in keyword counts and in the typed
+  error check.
+- Reader macros that wrap a form, such as `@` and `'`, no longer add
+  nesting depth.
+- Libraries with reverse-domain names, such as
+  `systems.thoughtfull.amalgam` and `systems.thoughtfull.desiderata`, are
+  no longer counted as one library.
 
 ## [0.2.0] - 2026-10-05
 

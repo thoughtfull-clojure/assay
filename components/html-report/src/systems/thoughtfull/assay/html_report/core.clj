@@ -736,7 +736,8 @@ function viewer(graph) {
   (when (seq edges)
     (list
       [:p {:class "graph-key"}
-       "Red: a dependency on a less stable brick."
+       "Red: an unstable dependency, on a brick less stable by more than"
+       " the threshold."
        " Dashed: new since the base."
        " Dotted amber, no arrow: bricks that change together but don't"
        " depend on each other. Drag to pan; hold Ctrl or ⌘ and scroll, or"

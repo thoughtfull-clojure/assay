@@ -50,14 +50,25 @@ bb assay --help
 ```
 
 By default, assay writes an HTML report to `target/assay/index.html`. See
-the [sample report](sample-report.html) for what it looks like.
+the [sample report](sample-report.html) for what it looks like, and the
+[sample GitHub summary](sample-github-summary.md) for the job summary it
+writes under GitHub Actions.
 
 ## Configure thresholds
 
 Assay works without configuration. To change thresholds, add `assay.edn`
-at the workspace root, or pass another file with `--config`. The README's
-[configuration section](../README.md#configuration) lists every setting and
-its default.
+at the workspace root, or pass another file with `--config`. Its keys are
+the report's categories, each mapping metrics to their thresholds, merged
+over the defaults. For example, to make deep functions an error past 8,
+and let any brick require `java-time`:
+
+```clojure
+{:complexity {:function-depth {:error 8}}
+ :io {:library-spread {:allow #{"java-time"}}}}
+```
+
+The README's [configuration section](../README.md#configuration) lists
+every setting and its default.
 
 ## Check each commit with a Git hook
 

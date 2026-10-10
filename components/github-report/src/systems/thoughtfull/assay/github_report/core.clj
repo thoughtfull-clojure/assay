@@ -389,7 +389,8 @@
   "The brick graph as a Mermaid diagram, which GitHub renders."
   [{:keys [bricks edges violations graph-violations]}]
   (when (seq edges)
-    (str "Red: a dependency on a less stable brick. Dashed: new"
+    (str "Red: an unstable dependency, on a brick less stable by more"
+      " than the threshold. Dashed: new"
       " since the base. Dotted amber, no arrow: bricks that change"
       " together but don't depend on each other.\n\n"
       "```mermaid\n"
