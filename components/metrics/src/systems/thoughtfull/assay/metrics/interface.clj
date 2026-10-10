@@ -52,8 +52,11 @@
   thresholds check), and optionally :default (its default thresholds, a
   map of :warning and :error), :options (the defaults of its other
   settings), :function-key and :line-key (for a :function metric, the
-  function's value and line), and :format and :precision. See the
-  comment on the registry in core for what each kind means."
+  function's value and line), :gate (other metrics' least values for it to
+  be checked), :outline? (true for a ratio, density, or mean that reports
+  outline), :aggregate (for a :finding metric, :count, :sum, or :value),
+  and :format (:decimal or :percent) and :precision. See the comment on
+  the registry in core for more."
   core/metrics)
 
 (defn metric
@@ -61,6 +64,18 @@
   nil."
   [k]
   (core/metric k))
+
+(defn applies?
+  "True if metric (a registry entry) checks measurement: the brick is of a
+  type it checks, and its metrics pass the metric's :gate."
+  [metric measurement]
+  (core/applies? metric measurement))
+
+(defn subject-key
+  "The key, in a brick's metrics, of the subject of :aggregate :value
+  metric k, which reports show with its value."
+  [k]
+  (core/subject-key k))
 
 (def columns
   "Ordered display columns for brick metrics, each a map of :label,
@@ -71,8 +86,7 @@
 (def sections
   "Report sections in order, each a map of :key, :label, and :columns, the
   columns (as in columns) it shows: dependencies, complexity, modularity,
-  I/O and mutability, error handling, and tests. :components-only is true
-  for a section whose table leaves bases out."
+  I/O and mutability, error handling, and tests."
   core/sections)
 
 (defn violation-section
@@ -83,19 +97,22 @@
 
 (defn section-measurements
   "The measurements a section's table shows: components only, for a
-  section marked :components-only, otherwise all of them."
+  section marked :components-only, otherwise all of them. No section is
+  marked today: every table shows bases too."
   [section measurements]
   (core/section-measurements section measurements))
 
 (defn format-value
-  "Brick metric k's value v for display: decimals to their precision,
+  "Brick metric k's value v for display: percentages as such, decimals to
+  their precision,
   other whole numbers as they are and fractions (such as averages) to one
   place, and nil as a dash."
   [k v]
   (core/format-value k v))
 
 (defn column-text
-  "A column's values from a map of metrics, joined with \" / \"."
+  "A column's values from a map of metrics, joined with \" / \", each after
+  its subject when it has one, as in \"patient (1%)\"."
   [column metrics]
   (core/column-text column metrics))
 
@@ -111,12 +128,13 @@
   core/outlier-std-devs)
 
 (defn outliers
-  "Brick metrics at least k standard deviations from the mean of every
-  brick that has a value, as a map of [brick-name metric-key] to :z (signed
-  standard deviations from the mean), :mean, :std-dev (of the population),
-  and :peers, :bricks or :components (for metrics that check only
-  components, which leave bases out). A metric needs at least 3 values and
-  some variation."
+  "Values of outlined metrics (see :outline? in metrics) at least k sample
+  standard deviations past the mean of the other bricks the metric
+  applies to, in the metric's :direction, as the :std-devs threshold
+  compares. A map of [brick-name metric-key] to :z (signed standard
+  deviations from the others' mean), :mean, :std-dev, and :peers,
+  :bricks or :components (for metrics that check only components). A
+  metric needs at least 4 values."
   [measurements k]
   (core/outliers measurements k))
 

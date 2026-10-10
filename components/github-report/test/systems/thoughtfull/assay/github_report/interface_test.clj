@@ -42,8 +42,8 @@
                   (second (re-find (re-pattern (str "(?s)### \\S+ " heading
                                                  "\n(.*?)###"))
                             summary)))]
-    (is (not (str/includes? (section "Dependencies") "| base b |"))
-      "the dependencies table leaves bases out")
+    (is (str/includes? (section "Dependencies") "| base b |")
+      "the dependencies table shows bases")
     (is (str/includes? (section "Modularity") "| base b |"))))
 
 (def ^:private compared
@@ -85,12 +85,12 @@
   (let [summary (github-report/summary
                   (assoc report
                     :violations []
-                    :bricks (for [[i forms] (map-indexed vector
-                                              [10 10 10 10 10 10 10 10 10 100])]
+                    :bricks (for [[i density] (map-indexed vector
+                                                [1 1 2 2 1 2 9])]
                               {:brick {:name (str "b" i) :type :component}
-                               :metrics {:forms forms}})))]
-    (is (str/includes? summary "| **100** |"))
-    (is (= 1 (count (re-seq #"\*\*\d+\*\*" summary))))
+                               :metrics {:interop-density density}})))]
+    (is (str/includes? summary "| **9.0** |"))
+    (is (= 1 (count (re-seq #"\*\*[\d.]+\*\*" summary))))
     (is (str/includes? summary "Bold: 2 or more standard deviations"))))
 
 (deftest shared-libraries-test
@@ -179,10 +179,10 @@
                   (-> compared
                     (assoc :violations [(first (:violations compared))]
                       :hidden-existing 1)))]
-    (is (str/includes? summary "| component a | – | 40 | – | **12.0 (+8.0)** ❌ | – |"))
+    (is (str/includes? summary "| component a | 40 | – | **12.0 (+8.0)** ❌ | – | – | – | – | – |"))
     (is (not (str/includes? summary "| base b |"))
       "a brick whose values didn't change is not shown")
-    (is (str/includes? summary "| **Average** | – | 170 | – | 7.0 | – |")
+    (is (str/includes? summary "| **Average** | 170 | – | 7.0 | – | – | – | – | – |")
       "the average is still of all bricks")
     (is (str/includes? summary
           "1 unchanged brick not shown. The average is of all bricks."))

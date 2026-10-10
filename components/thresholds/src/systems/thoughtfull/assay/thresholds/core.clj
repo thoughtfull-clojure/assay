@@ -198,7 +198,7 @@
 
 (defmethod violations :brick
   [{:keys [key direction] :as metric} settings bricks _]
-  (let [checked (filter #(checked? metric (:brick %)) bricks)]
+  (let [checked (filter #(metrics/applies? metric %) bricks)]
     (for [{:keys [brick] :as m} checked
           :let [value (get-in m [:metrics key])]
           :when (some? value)
@@ -267,28 +267,42 @@
   [settings]
   (some #(some? (get settings %)) levels))
 
+(defn- aggregate
+  "A :function or :finding metric's value for a brick, from its violations
+  and findings: their :count (the default), the :sum of the violations'
+  values, or the :value of its one finding, with the finding's subject."
+  [{:keys [key aggregate]} violated found]
+  (case aggregate
+    :sum {key (reduce + 0 (map :value violated))}
+    :value (when-let [{:keys [value subject]} (first found)]
+             {key value (metrics/subject-key key) subject})
+    {key (count violated)}))
+
 (defn- counts
   "Each brick's value of the metrics whose values come from evaluating
-  them: for a :function or :finding metric, its violations; for a :count
-  metric, its findings. nil for a brick of a type the metric doesn't
-  describe, or a :function or :finding metric that is off."
+  them: for a :function or :finding metric, from its violations (see
+  aggregate); for a :count metric, its findings. nil for a brick of a type
+  the metric doesn't describe, or a :function or :finding metric that is
+  off."
   [config bricks findings violations]
-  (let [violated (frequencies (map (juxt :metric (comp :name :brick))
-                                violations))
-        found (frequencies (for [[k fs] findings
-                                 f fs]
-                             [k (:name (:brick f))]))]
+  (let [violated (group-by (juxt :metric (comp :name :brick)) violations)
+        found (group-by (juxt first (comp :name :brick second))
+                (for [[k fs] findings
+                      f fs]
+                  [k f]))]
     (for [{:keys [brick] :as m} bricks]
       (update m :metrics merge
         (into {}
-          (for [{:keys [key kind types]} (map metrics/metric
-                                           (map :key metrics/metrics))
-                :when (#{:function :finding :count} kind)]
-            [key (when (contains? types (:type brick))
-                   (case kind
-                     :count (found [key (:name brick)] 0)
-                     (when (on? (settings config key))
-                       (violated [key (:name brick)] 0))))]))))))
+          (for [{:keys [key kind types] :as metric}
+                (map metrics/metric (map :key metrics/metrics))
+                :when (#{:function :finding :count} kind)
+                :let [cell [key (:name brick)]]]
+            (cond
+              (not (contains? types (:type brick))) {key nil}
+              (= :count kind) {key (count (found cell))}
+              (on? (settings config key)) (aggregate metric (violated cell)
+                                            (map second (found cell)))
+              :else {key nil})))))))
 
 (defn check
   [config bricks findings]

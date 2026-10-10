@@ -77,11 +77,18 @@
               :when prefix]
           (update entry :ns #(symbol (str prefix "." %))))))))
 
+(defn- unwrap-meta
+  "The node that metadata such as ^:no-doc is attached to, or node."
+  [node]
+  (if (= :meta (some-> node n/tag))
+    (recur (last (code-children node)))
+    node))
+
 (defn ns-info
   [forms]
   (when-let [ns-form (first (filter #(= "ns" (head-symbol %))
                               (code-children forms)))]
-    {:ns (token-value (second (code-children ns-form)))
+    {:ns (token-value (unwrap-meta (second (code-children ns-form))))
      :line (:row (meta ns-form))
      :requires (vec
                  (for [clause (code-children ns-form)

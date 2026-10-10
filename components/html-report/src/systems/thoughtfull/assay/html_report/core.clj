@@ -329,7 +329,7 @@ details.legend dd code {
 (defn- outlier-message
   [metric {:keys [z mean std-dev peers]}]
   (str (format "%.1f" (abs z)) " standard deviations "
-    (if (pos? z) "above" "below") " the mean of all " (name peers) " ("
+    (if (pos? z) "above" "below") " the mean of the other " (name peers) " ("
     (metrics/format-value metric mean) " ± "
     (metrics/format-value metric std-dev) ")"))
 
@@ -443,9 +443,9 @@ details.legend dd code {
       (when outlined?
         [:p {:class "table-key"}
          [:span {:class "outlier-key"}] " Outlined: "
-         metrics/outlier-std-devs " or more standard deviations from the"
-         " mean of all bricks (of all components, for metrics that only"
-         " describe components)."]))))
+         metrics/outlier-std-devs " or more standard deviations worse than"
+         " the mean of the other bricks the metric checks. Only ratios,"
+         " densities, and means are outlined."]))))
 
 (defn- inline-code
   "Text with `backticked` spans rendered as code."

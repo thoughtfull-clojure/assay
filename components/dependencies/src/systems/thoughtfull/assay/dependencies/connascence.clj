@@ -14,11 +14,15 @@
    [systems.thoughtfull.assay.dependencies.names :as names]))
 
 (defn shared-keywords
-  "For each brick name, how many of its keywords another brick also uses."
+  "For each brick name, how many of its qualified keywords another brick
+  also uses."
   [measurements]
   (let [keywords-of (into {}
                       (for [{:keys [brick sources]} measurements]
-                        [(:name brick) (into #{} (mapcat :keywords) sources)]))
+                        [(:name brick) (into #{}
+                                         (comp (mapcat :keywords)
+                                           (filter qualified-keyword?))
+                                         sources)]))
         brick-counts (frequencies (mapcat val keywords-of))]
     (update-vals keywords-of
       (fn [ks] (count (filter #(< 1 (brick-counts %)) ks))))))

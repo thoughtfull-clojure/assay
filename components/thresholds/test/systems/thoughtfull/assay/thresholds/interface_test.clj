@@ -69,23 +69,31 @@
             ["a" :interop-density :warning "6 is above the maximum of 5"]]
           (check (only {:io {:interop-density {:warning 5}}
                         :modularity {:cohesion {:warning 0.5}}})
-            [(measurement "a" {:interop-density 6 :cohesion 0.9})
-             (measurement "b" {:interop-density 1 :cohesion 0.4})]))))
+            [(measurement "a" {:interop-density 6 :cohesion 0.9
+                               :workspace-references 10})
+             (measurement "b" {:interop-density 1 :cohesion 0.4
+                               :workspace-references 10})]))))
   (testing "a value past both thresholds is an error"
     (is (= [["a" :interop-density :error "20 is above the maximum of 10"]]
           (check (only {:io {:interop-density {:warning 5 :error 10}}})
             [(measurement "a" {:interop-density 20})]))))
   (testing "only the brick types the metric checks"
     (is (empty? (check (only {:modularity {:cohesion {:warning 0.5}}})
-                  [(measurement "cli" :base {:cohesion 0.1})])))))
+                  [(measurement "cli" :base {:cohesion 0.1
+                                             :workspace-references 10})]))))
+  (testing "only bricks past the metric's gate"
+    (is (empty? (check (only {:modularity {:cohesion {:warning 0.5}}})
+                  [(measurement "a" {:cohesion 0.1
+                                     :workspace-references 9})])))))
 
 (deftest std-devs-test
   (let [config (only {:complexity {:mean-function-complexity
                                    {:warning {:std-devs 2}}}})
         bricks (conj (mapv #(measurement (str "c" %)
-                              {:mean-function-complexity %})
+                              {:mean-function-complexity % :functions 5})
                        [4 5 6 5])
-                 (measurement "outlier" {:mean-function-complexity 20}))]
+                 (measurement "outlier" {:mean-function-complexity 20
+                                         :functions 5}))]
     (testing "compares each brick with the others, excluding itself"
       (is (= [["outlier" :mean-function-complexity :warning
                (str "20 is 18.4 standard deviations above the mean of 4"
@@ -107,17 +115,29 @@
                "2 is above every other brick (1)"]]
             (check config
               (for [[n v] [["a" 1] ["b" 1] ["c" 1] ["d" 2]]]
-                (measurement n {:mean-function-complexity v})))))))
+                (measurement n {:mean-function-complexity v
+                                :functions 5}))))))
+    (testing "bricks below the gate are neither checked nor peers"
+      (is (= [["outlier" 3]]
+            (map (juxt (comp :name :brick) (comp :peers :stats))
+              (:violations
+               (thresholds/check (thresholds/merge-config config)
+                 (conj (vec (rest bricks))
+                   (measurement "small" {:mean-function-complexity 30
+                                         :functions 4}))
+                 {})))))))
   (testing "a metric that checks components compares with components"
     (is (re-find #"above the mean of 5 other components"
           (last (first (check (only {:tests {:assertions-per-test
                                              {:warning {:std-devs 2}}}})
                          (concat (for [i (range 5)]
                                    (measurement (str "c" i)
-                                     {:assertions-per-test (+ 2 (mod i 2))}))
-                           [(measurement "big" {:assertions-per-test 12})
+                                     {:assertions-per-test (+ 2 (mod i 2))
+                                      :tests 10}))
+                           [(measurement "big" {:assertions-per-test 12
+                                                :tests 10})
                             (measurement "cli" :base
-                              {:assertions-per-test 500})]))))))))
+                              {:assertions-per-test 500 :tests 10})]))))))))
 
 (deftest function-test
   (let [bricks [{:brick {:name "a" :type :component}
@@ -184,8 +204,8 @@
 (deftest defaults-test
   (testing "cohesion: components below 0.5"
     (is (= [["x" :cohesion :warning "0.4 is below the minimum of 0.5"]]
-          (check {} [(measurement "x" {:cohesion 0.4})
-                     (measurement "cli" :base {:cohesion 0.1})])))))
+          (check {} [(measurement "x" {:cohesion 0.4
+                                       :workspace-references 10})])))))
 
 (deftest worse-level-test
   (is (= :error (thresholds/worse-level :warning :error)))

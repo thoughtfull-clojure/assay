@@ -85,9 +85,10 @@
             (dependencies/analyze workspace
               [(brick "lonely" :component (source 't.lonely.interface 10))]))]
     (is (= {:afferent 0 :efferent 0 :instability nil :abstractness 0.0
-            :cohesion nil :shared-keywords 0 :libraries 0 :shared-libraries 0
-            :error-surface 0 :untested-interface 1
-            :main-sequence-distance nil}
+            :cohesion nil :workspace-references 0 :shared-keywords 0
+            :libraries 0 :error-surface 0.0 :throwing-interface 0
+            :interface-definitions 1 :untested-interface 1.0
+            :untested-definitions 1 :main-sequence-distance nil}
           (m "lonely")))))
 
 (deftest unstable-dependencies-test
@@ -134,8 +135,7 @@
               {:library "clojure.tools.cli" :bricks ["x"]}]
             (map #(select-keys % [:library :bricks]) (:libraries analysis)))))
     (testing "metrics"
-      (is (= {"a" [1 1] "b" [2 1] "x" [2 0]}
-            (update-vals m (juxt :libraries :shared-libraries)))))
+      (is (= {"a" 1 "b" 2 "x" 2} (update-vals m :libraries))))
     (testing "a finding at each brick's first require of a shared library"
       (is (= [["a" "next.jdbc" 2 {:file "a/core.clj" :line 3}
                "requires next.jdbc, which b also requires"]
@@ -202,8 +202,11 @@
                 :metrics {}
                 :sources [{:ns 't.x.main :file "x/main.clj" :requires []
                            :definitions [(defn* '-main true)]}]}]))]
-    (is (= {"a" 1 "b" 1 "x" nil} (update-vals m :error-surface))
-      "across bricks, through referred and aliased symbols; bases have none")))
+    (is (= {"a" 0.5 "b" 1.0 "x" nil} (update-vals m :error-surface))
+      "the share that throws, across bricks, through referred and aliased
+      symbols; bases have none")
+    (is (= {"a" [1 2] "b" [1 1] "x" [nil nil]}
+          (update-vals m (juxt :throwing-interface :interface-definitions))))))
 
 (deftest broad-catches-test
   (is (= [["a" {:file "a/core.clj" :line 4}
@@ -263,7 +266,9 @@
                                          {:ns 't.a.core :line 3}]
                               :references #{'g}}]}])]
     (testing "interface definitions no test in the workspace mentions"
-      (is (= 1 (get-in (metrics-by-name analysis) ["a" :untested-interface]))
+      (is (= [(/ 1 3.0) 1]
+            ((juxt :untested-interface :untested-definitions)
+             (get (metrics-by-name analysis) "a")))
         "f is mentioned in a's tests and g in b's; h in none"))
     (testing "tests that require another brick's implementation"
       (is (= [["b" {:file "b/core_test.clj" :line 3}
@@ -329,7 +334,8 @@
 
 (def ^:private connected
   ;; b's interface function wide is used by a; narrow is used too; unused
-  ;; is wide but unused. Both bricks share :id; a also has :only-a.
+  ;; is wide but unused. Both bricks share :id and :x/shared; a also has
+  ;; :only-a.
   ;; Both bricks contain fragment 99 (40 forms), and a also contains a
   ;; smaller fragment 98 inside it, which b has too.
   [{:brick {:name "a" :type :component}
@@ -338,7 +344,7 @@
     :sources [{:file "a/core.clj" :ns 't.a.core :forms 100
                :requires [{:ns 't.b.interface :as 'b}]
                :definitions (defs ['f 'b/wide 'b/narrow])
-               :keywords #{:id :only-a}
+               :keywords #{:id :only-a :x/shared}
                :fragments [{:hash 99 :forms 40 :line 10 :end-line 20}
                            {:hash 98 :forms 31 :line 12 :end-line 15}]}]}
    {:brick {:name "b" :type :component}
@@ -349,7 +355,7 @@
     :sources [{:file "b/interface.clj" :ns 't.b.interface :forms 10
                :requires []
                :definitions (defs ['wide] ['narrow] ['unused])
-               :keywords #{:id}
+               :keywords #{:id :x/shared}
                :fragments [{:hash 99 :forms 40 :line 30 :end-line 40}
                            {:hash 98 :forms 31 :line 32 :end-line 35}]}]}])
 
@@ -357,7 +363,7 @@
   (let [analysis (dependencies/analyze workspace connected)
         findings (dependencies/findings {:duplicate-code {:warning 30}}
                    analysis)]
-    (testing "meaning: shared keywords"
+    (testing "meaning: shared qualified keywords"
       (is (= {"a" 1 "b" 1}
             (update-vals (metrics-by-name analysis) :shared-keywords))))
     (testing "position: only interface functions other bricks use"
@@ -381,6 +387,78 @@
     (testing "off without thresholds"
       (is (nil? (found :duplicate-code {:duplicate-code {:warning nil}}
                   analysis))))))
+
+(deftest public-interface-test
+  (let [m (metrics-by-name
+            (dependencies/analyze workspace
+              [(brick "a" :component
+                 (assoc (source 't.a.interface 20)
+                   :definitions [{:name 'f :line 1 :references #{}}
+                                 {:name 'helper :line 2 :references #{}
+                                  :private? true}])
+                 (source 't.a.core 20))]))]
+    (is (= 0.75 (get-in m ["a" :abstractness]))
+      "a private definition in the interface isn't interface")
+    (is (= 1 (get-in m ["a" :interface-definitions])))))
+
+(deftest cohesion-types-test
+  (let [m (metrics-by-name (dependencies/analyze workspace cohesive))]
+    (is (= 5 (get-in m ["a" :workspace-references])))
+    (is (nil? (get-in (metrics-by-name
+                        (dependencies/analyze workspace
+                          [(brick "x" :base (source 't.x.main 10))]))
+                ["x" :cohesion]))
+      "bases have no cohesion")))
+
+(deftest library-names-test
+  (is (= ["java-time" "systems.thoughtfull.amalgam"
+          "systems.thoughtfull.desiderata"]
+        (map :library
+          (:libraries
+           (dependencies/analyze workspace
+             [{:brick {:name "a" :type :component}
+               :metrics {}
+               :sources [{:file "a.clj" :ns 't.a.core
+                          :requires [{:ns 'systems.thoughtfull.amalgam :line 1}
+                                     {:ns 'systems.thoughtfull.desiderata
+                                      :line 2}
+                                     {:ns 'java-time.api :line 3}
+                                     {:ns 'java-time.clock :line 4}]}]}]))))
+    "a reverse-domain name keeps its organization and library; others
+    group by their first segment"))
+
+(deftest test-support-test
+  (is (empty? (found :boundary-crossings
+                (dependencies/analyze workspace
+                  [{:brick {:name "a" :type :component}
+                    :metrics {}
+                    :sources [{:ns 't.a.interface :file "a/interface.clj"
+                               :requires [] :definitions []}]
+                    :tests [{:ns 't.a.generators :file "a/generators.clj"
+                             :requires []}]}
+                   {:brick {:name "b" :type :component}
+                    :metrics {}
+                    :sources []
+                    :tests [{:ns 't.b.core-test :file "b/core_test.clj"
+                             :requires [{:ns 't.a.generators :line 2}]}]}])))
+    "another brick's test namespaces, such as generators, aren't crossings"))
+
+(deftest catch-handling-test
+  (is (= ["catches Exception and logs it, deciding for every caller what a failure means"
+          "catches Throwable and carries on, deciding for every caller what a failure means"]
+        (->> (dependencies/analyze workspace
+               [{:brick {:name "a" :type :component}
+                 :metrics {}
+                 :sources [{:file "a/core.clj" :ns 't.a.core
+                            :catches [{:line 1 :class "Exception" :broad? true
+                                       :handling :rethrows}
+                                      {:line 2 :class "Exception" :broad? true
+                                       :handling :logs}
+                                      {:line 3 :class "Throwable" :broad? true
+                                       :handling :continues}]}]}])
+          (found :broad-catches)
+          (map :message)))
+    "a catch that rethrows translates the failure, so it doesn't count"))
 
 (deftest neighbors-test
   (is (= [{:brick {:name "a"} :depends-on ["b" "c"] :depended-on-by []}

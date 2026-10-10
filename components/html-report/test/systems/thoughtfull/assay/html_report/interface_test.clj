@@ -85,12 +85,12 @@
 (deftest outlier-test
   (let [html (html-report/render
                (assoc report :bricks
-                 (for [[i forms] (map-indexed vector [10 10 10 10 10 10 10 10 10 100])]
+                 (for [[i density] (map-indexed vector [1 1 2 2 1 2 9])]
                    {:brick {:name (str "b" i) :type :component}
-                    :metrics {:forms forms}})))]
+                    :metrics {:interop-density density}})))]
     (is (str/includes? html
-          (str "<td class=\"num outlier\" title=\"3.0 standard deviations above"
-            " the mean of all bricks (19 ± 27)\">100</td>")))
+          (str "<td class=\"num outlier\" title=\"13.7 standard deviations above"
+            " the mean of the other components (1.5 ± 0.5)\">9.0</td>")))
     (is (= 1 (count (re-seq #"class=\"num outlier\"" html))))
     (is (str/includes? html "Outlined: 2 or more standard deviations"))))
 
@@ -156,9 +156,10 @@
                   (second (re-find (re-pattern (str "(?s)<h2>" heading
                                                  "</h2>(.*?)<h2>"))
                             html)))]
-    (is (not (str/includes? (section "Dependencies")
-               "<span class=\"brick-name\">cli</span> <span class=\"type\">base</span></td><td class"))
-      "the dependencies table leaves bases out")
+    (is (str/includes? (section "Dependencies")
+          (str "<span class=\"brick-name\">cli</span> <span class=\"type\">"
+            "base</span></td><td class=\"num\">0</td><td class=\"num\">2</td>"))
+      "the dependencies table shows bases")
     (is (str/includes? (section "Modularity")
           (str "<span class=\"brick-name\">cli</span> <span class=\"type\">"
             "base</span></td><td class=\"num\">–</td><td class=\"num\">–</td>"

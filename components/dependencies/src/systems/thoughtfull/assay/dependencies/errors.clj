@@ -28,19 +28,24 @@
         seen))))
 
 (defn analyze
-  "Brick name to {:error-surface n}: the component's interface definitions
-  that can throw, or nil for a base."
+  "Brick name to {:error-surface r :throwing-interface n
+  :interface-definitions n}: the share and number of the component's
+  public interface definitions that can throw, and how many it has. A
+  base has none of them, and a component without public interface
+  definitions no :error-surface."
   [{:keys [top-namespace] :as workspace} measurements]
   (let [segments (names/segments top-namespace measurements)
         throws? (throwing measurements)]
     (into {}
       (for [{:keys [brick sources]} measurements
-            :let [own (segments (:name brick))]]
+            :let [own (segments (:name brick))
+                  interface (names/interface-definitions workspace own
+                              sources)
+                  throwing (count (filter #(throws? [(:ns %) (:name %)])
+                                    interface))]]
         [(:name brick)
-         {:error-surface
-          (when (= :component (:type brick))
-            (count (for [{:keys [ns definitions]} sources
-                         :when (names/interface-ns? workspace own ns)
-                         {:keys [name]} definitions
-                         :when (throws? [ns name])]
-                     name)))}]))))
+         (when (= :component (:type brick))
+           {:error-surface (when (seq interface)
+                             (/ throwing (double (count interface))))
+            :throwing-interface throwing
+            :interface-definitions (count interface)})]))))

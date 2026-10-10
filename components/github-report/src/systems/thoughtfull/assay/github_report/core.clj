@@ -297,8 +297,8 @@
                     (some #(outlier? (:name brick) %) columns))
               shown)
         (str "\n\nBold: " metrics/outlier-std-devs " or more standard"
-          " deviations from the mean of all bricks (of all components, for"
-          " metrics that only describe components)."))
+          " deviations worse than the mean of the other bricks the metric"
+          " checks. Only ratios, densities, and means are outlined."))
       "\n\n" (legend columns))))
 
 (defn- dependencies-graph

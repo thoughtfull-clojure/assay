@@ -24,14 +24,26 @@
 (def ^:private prefix-segments
   "How many segments name a library under a shared prefix: clojure.java.io
   and clojure.tools.cli are libraries, as are babashka.fs and
-  com.stuartsierra.component. Otherwise the first segment names it, as
-  rewrite-clj does for rewrite-clj.node and rewrite-clj.parser."
-  {"clojure" 3 "com" 3 "org" 3 "io" 3 "net" 3 "babashka" 2 "cognitect" 2})
+  cognitect.aws. Otherwise the first segment names it, as rewrite-clj does
+  for rewrite-clj.node and rewrite-clj.parser, unless it is a top-level
+  domain (see domains)."
+  {"clojure" 3 "babashka" 2 "cognitect" 2})
+
+(def ^:private domains
+  "Top-level domains that begin reverse-domain namespaces, such as
+  com.stuartsierra.component and systems.thoughtfull.amalgam, where a
+  library is named by the domain, the organization, and the library."
+  #{"com" "org" "io" "net" "dev" "systems" "me" "ai" "app" "co" "tech"
+    "info" "biz" "xyz" "us" "uk" "de" "fr" "nl" "se" "no" "fi" "dk" "ch"
+    "at" "be" "eu" "es" "it" "pl" "cz" "ca" "au" "nz" "jp" "br" "in"})
 
 (defn- library-key
   [ns]
-  (let [segments (str/split (str ns) #"\.")]
-    (str/join "." (take (prefix-segments (first segments) 1) segments))))
+  (let [segments (str/split (str ns) #"\.")
+        first-segment (first segments)]
+    (str/join "." (take (or (prefix-segments first-segment)
+                          (if (domains first-segment) 3 1))
+                    segments))))
 
 (defn- common-prefix
   "The longest run of namespace segments that every namespace starts with,
@@ -47,8 +59,7 @@
   "The libraries outside the workspace that each brick requires, as
   :libraries, a vector of {:library :bricks :requires} with :requires the
   first require of the library in each brick ({:brick :file :line}), most
-  spread first; and :metrics, brick name to :libraries and
-  :shared-libraries counts."
+  spread first; and :metrics, brick name to its :libraries count."
   [top-ns measurements]
   (let [requires (for [{:keys [brick sources]} measurements
                        {:keys [file requires]} sources
@@ -73,10 +84,7 @@
      :metrics (into {}
                 (for [{:keys [brick]} measurements
                       :let [ls (map second (by-brick (:name brick)))]]
-                  [(:name brick)
-                   {:libraries (count ls)
-                    :shared-libraries (count (filter #(< 1 (count (:bricks %)))
-                                               ls))}]))}))
+                  [(:name brick) {:libraries (count ls)}]))}))
 
 (defn spread
   "At each brick's require of a library that another brick also requires,

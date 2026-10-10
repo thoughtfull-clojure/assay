@@ -37,11 +37,9 @@
 
 (defn- abstractness
   [workspace own {:keys [brick sources]}]
-  (let [definitions #(count (mapcat :definitions %))
-        total (definitions sources)
-        interface (definitions (filter #(names/interface-ns? workspace own
-                                          (:ns %))
-                                 sources))]
+  (let [total (count (mapcat :definitions sources))
+        interface (count (names/interface-definitions workspace own
+                           sources))]
     (when (and (= :component (:type brick)) (pos? total))
       (- 1.0 (/ interface (double total))))))
 
@@ -170,19 +168,24 @@
                       " shares the state")
                     ", state hidden from the functions that use it"))})))
 
+(def ^:private handling-text
+  {:logs " and logs it"
+   :continues " and carries on"})
+
 (defn- broad-catches
-  "Broad catch clauses in every brick. Bases, at the edges, are where a
-  failure's meaning is known."
+  "Broad catch clauses that don't rethrow, in every brick. Bases, at the
+  edges, are where a failure's meaning is known. A catch that rethrows
+  translates the failure rather than hiding it."
   [{:keys [bricks]}]
   (for [{:keys [brick sources]} bricks
         {:keys [file catches]} sources
-        {:keys [line class broad?]} catches
-        :when broad?]
+        {:keys [line class broad? handling]} catches
+        :when (and broad? (not= :rethrows handling))]
     {:brick brick
      :subject (str file ":" line)
      :location {:file file :line line}
-     :message (str "catches " class ", deciding for every caller what a"
-                " failure means")}))
+     :message (str "catches " class (handling-text handling)
+                ", deciding for every caller what a failure means")}))
 
 (def ^:private untyped-text
   {:untyped "throws ex-info without a :type in its data"

@@ -21,6 +21,16 @@
 ;;   :types). A base outside :checks still shows its value.
 ;; - :default is its default thresholds, a map of :warning and :error, and
 ;;   :options the defaults of its other settings.
+;; - :gate is a map of other brick metrics to the least value each must
+;;   have for the metric to be checked, such as a minimum of tests for a
+;;   mean per test: below it, the value says too little.
+;; - :outline? is true for a ratio, density, or mean, which reports outline
+;;   when a brick is far past the others in its :direction. A count, which
+;;   grows with the brick, isn't outlined.
+;; - :aggregate is how a :finding metric's brick value is made from its
+;;   violations: :count (the default), :sum of their values, or :value, the
+;;   value of the brick's one finding whether or not it is a violation,
+;;   shown with the finding's subject.
 
 (def metrics
   [{:key :afferent
@@ -62,10 +72,6 @@
     :kind :finding
     :default {:warning 0.5}
     :options {:since "12 months" :min-shared 5 :max-bricks-per-commit 5}}
-   {:key :files
-    :section :complexity
-    :label "Files"
-    :description "Clojure source files under src."}
    {:key :forms
     :section :complexity
     :label "Forms"
@@ -79,13 +85,17 @@
     :label "Mean function complexity"
     :description "Mean cyclomatic complexity of the brick's functions."
     :format :decimal
-    :precision 1}
+    :precision 1
+    :gate {:functions 5}
+    :outline? true}
    {:key :mean-function-depth
     :section :complexity
     :label "Mean nesting depth"
     :description "Mean nesting depth of the brick's functions."
     :format :decimal
-    :precision 1}
+    :precision 1
+    :gate {:functions 5}
+    :outline? true}
    {:key :function-complexity
     :section :complexity
     :label "Complex functions"
@@ -129,6 +139,8 @@
                    " component is from balancing the two.")
     :format :decimal
     :types #{:component}
+    :gate {:definitions 10}
+    :outline? true
     :default {:warning 0.7}}
    {:key :cohesion
     :section :modularity
@@ -136,25 +148,31 @@
     :description "Own-namespace references / all workspace references."
     :format :decimal
     :direction :min
-    :checks #{:component}
+    :types #{:component}
+    :gate {:workspace-references 10}
+    :outline? true
     :default {:warning 0.5}}
    {:key :shared-keywords
     :section :modularity
     :label "Shared keywords"
-    :description "Keywords this brick uses that other bricks also use."}
+    :description (str "Qualified keywords this brick uses that other bricks"
+                   " also use.")}
    {:key :duplicate-code
     :section :modularity
-    :label "Duplicate code"
-    :description (str "Code of more forms than the limit that another"
-                   " brick also has.")
+    :label "Duplicated forms"
+    :description (str "Forms in duplicates of more forms than the limit"
+                   " that another brick also has.")
     :kind :finding
+    :aggregate :sum
     :default {:warning 30}}
    {:key :merge-candidate
     :section :modularity
     :label "Merge into"
-    :description (str "A component with a single dependent, itself a"
-                   " component, and less than the limit of its size.")
+    :description (str "A component's single dependent, itself a component,"
+                   " and the component's size as a share of it.")
     :kind :finding
+    :aggregate :value
+    :format :percent
     :direction :min
     :types #{:component}
     :default {:warning 0.25}}
@@ -162,10 +180,6 @@
     :section :io
     :label "Libraries"
     :description "Libraries outside the workspace that the brick requires."}
-   {:key :shared-libraries
-    :section :io
-    :label "Shared libraries"
-    :description "Of those, libraries that another brick also requires."}
    {:key :library-spread
     :section :io
     :label "Spread libraries"
@@ -174,11 +188,6 @@
     :kind :finding
     :default {:warning 3}
     :options {:allow #{}}}
-   {:key :interop
-    :section :io
-    :label "Host interop"
-    :description (str "Java interop forms: method calls, field access,"
-                   " constructors, and static members.")}
    {:key :interop-density
     :section :io
     :label "Interop density"
@@ -186,6 +195,7 @@
     :format :decimal
     :precision 1
     :checks #{:component}
+    :outline? true
     :default {:warning 5}}
    {:key :mutable-state
     :section :io
@@ -198,8 +208,11 @@
    {:key :error-surface
     :section :errors
     :label "Error surface"
-    :description "Interface definitions that can throw, directly or not."
-    :types #{:component}}
+    :description (str "Share of the public interface definitions that can"
+                   " throw, directly or not.")
+    :format :decimal
+    :types #{:component}
+    :outline? true}
    {:key :untyped-errors
     :section :errors
     :label "Untyped errors"
@@ -208,10 +221,6 @@
     :kind :count
     :checks #{:component}
     :default {:warning 0}}
-   {:key :catches
-    :section :errors
-    :label "Catches"
-    :description "catch clauses."}
    {:key :broad-catches
     :section :errors
     :label "Broad catches"
@@ -230,6 +239,8 @@
     :format :decimal
     :precision 1
     :checks #{:component}
+    :gate {:tests 10}
+    :outline? true
     :default {:warning {:std-devs 2}}}
    {:key :forms-per-test
     :section :tests
@@ -238,17 +249,24 @@
     :format :decimal
     :precision 1
     :checks #{:component}
+    :gate {:tests 10}
+    :outline? true
     :default {:warning {:std-devs 2}}}
    {:key :untested-interface
     :section :tests
     :label "Untested interface"
-    :description "Interface definitions no test in the workspace mentions."
-    :types #{:component}}
+    :description (str "Share of the public interface definitions that no"
+                   " test in the workspace mentions.")
+    :format :decimal
+    :types #{:component}
+    :gate {:definitions 10}
+    :outline? true
+    :default {:warning 0.5}}
    {:key :boundary-crossings
     :section :tests
     :label "Boundary crossings"
-    :description (str "Requires, in tests, of another brick's namespaces"
-                   " other than its interface.")
+    :description (str "Requires, in tests, of another brick's source"
+                   " namespaces other than its interface.")
     :kind :count
     :default {:warning 0}}
    {:key :isolation-hazards
@@ -260,24 +278,26 @@
     :section :tests
     :label "Test ratio"
     :description "Test forms per source form."
-    :format :decimal}])
+    :format :decimal
+    :direction :min
+    :outline? true}])
 
 ;; Explanations are legend entries. Code and formulas are in backticks,
 ;; which reports render as code.
 
 (def ^:private brick-explanations
-  {:files "Clojure source files under the brick's `src` directory."
-   :forms (str "Every form at any depth: collections, symbols, and"
+  {:forms (str "Every form at any depth: collections, symbols, and"
             " literals. A measure of size that ignores formatting and"
             " comments.")
    :functions "`defn`, `defn-`, `defmacro`, and `defmethod` definitions."
    :mean-function-complexity
    (str "The mean cyclomatic complexity of the brick's functions. A rising"
-     " mean means the brick as a whole is getting harder to follow. The"
-     " function rules catch the most complex functions.")
+     " mean means the brick as a whole is getting harder to follow. Complex"
+     " functions counts the most complex. Bricks with fewer than 5"
+     " functions aren't compared: a mean of so few says little.")
    :mean-function-depth
-   (str "The mean nesting depth of the brick's functions. See nesting"
-     " depth under functions.")
+   (str "The mean nesting depth of the brick's functions. See deep"
+     " functions. Bricks with fewer than 5 functions aren't compared.")
    :afferent
    (str "How many bricks depend on this brick's interface. A high count"
      " means a change here ripples widely, so the interface should change"
@@ -313,7 +333,8 @@
      " `and` and `or` argument, `catch`, and the like.")
    :function-depth
    (str "Functions nested deeper than the limit. Each collection inside"
-     " another adds a level; a binding form's bindings start again at 1.")
+     " another adds a level; a binding form's bindings start again at 1,"
+     " and reader macros such as `@` and `'` add nothing.")
    :function-forms
    "Functions of more forms than the limit, counting every form in them."
    :function-params
@@ -327,13 +348,14 @@
      " though much depends on it, or abstract and unstable, an interface"
      " little uses.")
    :duplicate-code
-   (str "Code of more forms than the limit that appears in another brick"
-     " too, compared after formatting and comments: connascence of"
-     " algorithm. A fix to one copy has to be made to the other.")
+   (str "Forms of code that appears in another brick too, in duplicates of"
+     " more forms than the limit, compared after formatting and comments:"
+     " connascence of algorithm. A fix to one copy has to be made to the"
+     " other.")
    :merge-candidate
-   (str "A component used by a single component, and smaller than the"
-     " limit as a share of that component's forms. A component that"
-     " small, with one user, may belong inside it.")
+   (str "For a component used by a single component: that component, and"
+     " this one's size as a share of its forms. A component that small,"
+     " with one user, may belong inside it. Below the limit, it's flagged.")
    :library-spread
    (str "Libraries this brick requires that more bricks than the limit"
      " require. A library wrapped by one brick can be replaced or upgraded"
@@ -341,42 +363,34 @@
      " driver, means a missing gateway component. Libraries in `:allow`"
      " don't count.")
    :boundary-crossings
-   (str "Requires, in this brick's tests, of another brick's namespaces"
-     " other than its interface. Tests that reach into an implementation"
-     " break when it changes, though its interface didn't.")
+   (str "Requires, in this brick's tests, of another brick's source"
+     " namespaces other than its interface. Tests that reach into an"
+     " implementation break when it changes, though its interface didn't."
+     " Another brick's test namespaces, such as shared generators, don't"
+     " count.")
    :abstractness
-   (str "`1 - interface definitions / all definitions`, counting `def`,"
-     " `defn`, `defmethod`, and the like. A small interface over a large"
-     " implementation scores near `1`. A component whose interface is most"
-     " of its definitions hides little: at `0.5`, each interface definition"
-     " hides only one more. Bases have no interface, so no abstractness.")
+   (str "`1 - public interface definitions / all definitions`, counting"
+     " `def`, `defn`, `defmethod`, and the like. A small interface over a"
+     " large implementation scores near `1`. Private definitions in an"
+     " interface namespace aren't interface. Bases have no interface, so no"
+     " abstractness. Main-sequence distance weighs it against instability.")
    :cohesion
-   (str "`own references / workspace references`: how much the brick's"
+   (str "`own references / workspace references`: how much the component's"
      " code refers to its own namespaces rather than to other bricks."
-     " References to libraries don't count. A low value means the brick"
-     " is mostly glue between other bricks. For a base, low is expected;"
-     " high suggests logic that belongs in a component. Bases don't count"
-     " toward the average.")
+     " References to libraries don't count. A low value means the"
+     " component is mostly glue between other bricks. Bases are glue by"
+     " design, so they have none. Components with fewer than 10 workspace"
+     " references aren't checked: there is too little to go on.")
    :shared-keywords
-   (str "Keywords this brick uses that another brick also uses: usually"
-     " map keys that both must agree on (connascence of meaning). Renaming"
-     " one means changing every brick that shares it. Keywords that are"
-     " Clojure syntax, such as `:as` and `:keys`, don't count.")
+   (str "Qualified keywords this brick uses that another brick also uses,"
+     " such as `:patient/id`: map keys and values that both must agree on"
+     " (connascence of meaning). Renaming one means changing every brick"
+     " that shares it. Unqualified keywords, such as `:id` or HoneySQL's"
+     " `:select`, are too generic to say which bricks agree on what.")
    :libraries
    (str "Libraries outside the workspace that the brick requires, named by"
      " their namespaces, such as `next.jdbc` or `clojure.java.io`. Clojure's"
      " own pure namespaces, such as `clojure.string`, don't count.")
-   :shared-libraries
-   (str "The brick's libraries that another brick also requires. A library"
-     " wrapped by one brick can be replaced or upgraded in one place; a"
-     " library spread across bricks, such as a database driver, means a"
-     " missing gateway component.")
-   :interop
-   (str "Java interop forms: method calls and field access (`.method`,"
-     " `.-field`, `..`), constructors (`Foo.`, `new`), and static members"
-     " (`Math/abs`, `File/separator`). Interop couples code to the host;"
-     " spread across bricks rather than wrapped in a few, it makes the"
-     " workspace harder to port, test, and read as Clojure.")
    :interop-density
    (str "Host interop forms per 100 forms, so that large and small bricks"
      " compare fairly. A component that wraps a Java API is dense by"
@@ -387,33 +401,37 @@
      " functions that depend on it, which makes tests interfere with each"
      " other.")
    :error-surface
-   (str "Interface definitions that can throw: their body contains `throw`,"
-     " or refers to a definition that can, in this brick or another. Each"
-     " is a failure every caller must be ready for; the fewer, the simpler"
-     " the interface. Bases have no interface.")
+   (str "The share of a component's public interface definitions that can"
+     " throw: their body contains `throw` or `throw+`, or refers to a"
+     " definition that can, in this brick or another. Each is a failure"
+     " every caller must be ready for; the fewer, the simpler the"
+     " interface. Throws in libraries aren't seen. Bases have no interface.")
    :untyped-errors
    (str "Throws that give callers nothing to tell failures apart by: a Java"
      " exception such as `(Exception. msg)`, or `ex-info` whose data map"
      " has no `:type` key (or `:cognitect.anomalies/category`). Rethrows,"
      " and data that isn't a literal map, don't count.")
-   :catches
-   (str "`catch` clauses. Catching belongs where a failure can be handled,"
-     " usually at the edges, in bases.")
    :broad-catches
    (str "`catch` clauses for `Exception`, `RuntimeException`, `Throwable`,"
-     " or `Object`. In a component, a broad catch decides for every caller"
-     " what a failure means.")
+     " or `Object` that log and carry on, or carry on silently. In a"
+     " component, a broad catch decides for every caller what a failure"
+     " means. A catch that rethrows, such as wrapping the failure in an"
+     " `ex-info` of the component's own, doesn't count: that translates a"
+     " failure rather than hiding it.")
    :tests "`deftest` forms in the brick's `test` directory."
    :assertions-per-test
    (str "The mean number of `is` and `are` assertions per `deftest`. A test"
      " with many assertions checks many things, so a failure says less"
-     " about what broke.")
+     " about what broke. Bricks with fewer than 10 tests aren't compared.")
    :forms-per-test
    (str "The mean size of a `deftest`, in forms. Large tests usually set up"
-     " a lot of state or check many behaviors at once.")
+     " a lot of state or check many behaviors at once. Bricks with fewer"
+     " than 10 tests aren't compared.")
    :untested-interface
-   (str "Interface definitions that no test anywhere in the workspace"
-     " mentions: API with no test at all. Bases have no interface.")
+   (str "The share of a component's public interface definitions that no"
+     " test anywhere in the workspace mentions: API with no test at all."
+     " Components with fewer than 10 definitions aren't checked. Bases have"
+     " no interface.")
    :isolation-hazards
    (str "Things in tests that let tests affect each other or depend on"
      " timing: `with-redefs`, `Thread/sleep`, `alter-var-root`, and"
@@ -442,6 +460,16 @@
   [k]
   (metric-index k))
 
+(defn applies?
+  [{:keys [checks gate]} {:keys [brick metrics]}]
+  (and (contains? checks (:type brick))
+    (every? (fn [[k least]] (>= (get metrics k 0) least)) gate)))
+
+(defn subject-key
+  "The metrics key of an :aggregate :value metric's subject."
+  [k]
+  (keyword (str (name k) "-subject")))
+
 (def columns
   (mapv (fn [{:keys [key label description section]}]
           {:label label
@@ -451,12 +479,6 @@
            :keys [key]})
     registry))
 
-(def ^:private components-only-sections
-  "Sections whose bricks are components only: a base's afferent coupling
-  and instability follow from Polylith's structure, and the brick graph
-  already shows what each base depends on."
-  #{:dependencies})
-
 (def sections
   (vec (for [[key label] [[:dependencies "Dependencies"]
                           [:complexity "Complexity"]
@@ -464,10 +486,9 @@
                           [:io "I/O and mutability"]
                           [:errors "Error handling"]
                           [:tests "Tests"]]]
-         (cond-> {:key key
-                  :label label
-                  :columns (filterv #(= key (:section %)) columns)}
-           (components-only-sections key) (assoc :components-only true)))))
+         {:key key
+          :label label
+          :columns (filterv #(= key (:section %)) columns)})))
 
 (defn violation-section
   [{:keys [metric]}]
@@ -484,14 +505,23 @@
   (let [{:keys [format precision] :or {precision 2}} (metric-index k)]
     (cond
       (nil? v) "–"
+      (= :percent format) (str (Math/round (* 100 (double v))) "%")
       (= :decimal format) (clojure.core/format (str "%." precision "f")
                             (double v))
       (== v (Math/rint v)) (str (long v))
       :else (clojure.core/format "%.1f" (double v)))))
 
+(defn- value-text
+  "A metric's value from metrics, after its subject when it has one."
+  [metrics k]
+  (let [text (format-value k (get metrics k))]
+    (if-let [subject (get metrics (subject-key k))]
+      (str subject " (" text ")")
+      text)))
+
 (defn column-text
   [{:keys [keys]} metrics]
-  (str/join " / " (map #(format-value % (get metrics %)) keys)))
+  (str/join " / " (map #(value-text metrics %) keys)))
 
 (defn- mean-of
   [xs]
@@ -516,21 +546,27 @@
 (def outlier-std-devs
   2)
 
+(defn- sample-std-dev
+  [xs m]
+  (Math/sqrt (/ (reduce + (map #(Math/pow (- % m) 2) xs))
+               (dec (count xs)))))
+
 (defn outliers
   [measurements k]
   (into {}
-    (for [{:keys [key checks] :as metric} registry
+    (for [{:keys [key checks direction outline?] :as metric} registry
+          :when outline?
           :let [values (keep #(when-some [v (get-in % [:metrics key])]
                                 [(get-in % [:brick :name]) v])
-                         (peers metric measurements))]
-          :when (<= 3 (count values))
-          :let [xs (map second values)
-                m (mean-of xs)
-                sd (Math/sqrt (mean-of (map #(Math/pow (- % m) 2) xs)))]
-          :when (pos? sd)
+                         (filter #(applies? metric %) measurements))]
+          :when (<= 4 (count values))
           [brick-name v] values
-          :let [z (/ (- v m) sd)]
-          :when (<= k (abs z))]
+          :let [others (keep (fn [[other x]] (when (not= other brick-name) x))
+                         values)
+                m (mean-of others)
+                sd (sample-std-dev others m)
+                z (when (pos? sd) (/ (- v m) sd))]
+          :when (and z (<= k (if (= :max direction) z (- z))))]
       [[brick-name key] {:z z :mean m :std-dev sd
                          :peers (if (= #{:component} checks)
                                   :components
@@ -548,6 +584,9 @@
 ;;   body nests inside the form. Each binding value starts again at depth 1,
 ;;   and the binding vector and binding names add nothing.
 ;; - In fn, defn, and similar forms, parameter vectors add nothing.
+;; - Reader macros that wrap a form (@, ', `, ~, ~@, and metadata) add
+;;   nothing: the wrapped form is at the wrapper's depth, and metadata
+;;   itself doesn't count.
 
 (def ^:private binding-heads
   #{"let" "let*" "loop" "loop*" "binding" "with-open" "with-redefs"
@@ -559,6 +598,9 @@
 
 (def ^:private shallowest
   {:depth 0 :node nil})
+
+(def ^:private reader-wrappers
+  #{:deref :quote :syntax-quote :unquote :unquote-splicing :meta})
 
 (defn- deeper
   "The deeper of two results, preferring the first on a tie."
@@ -631,6 +673,9 @@
         head (parse/head-symbol node)]
     (cond
       (not (n/inner? node)) shallowest
+      (reader-wrappers (n/tag node)) (if-let [wrapped (last children)]
+                                       (deepest-at wrapped d)
+                                       shallowest)
       (and (binding-heads head) (some-> (first args) vector-node?))
       (binding-form-deepest node d args
         #(deepest-of (binding-values %) 1))
@@ -831,19 +876,40 @@
 (def ^:private definition-heads
   #{"def" "defn" "defn-" "defmacro" "defmulti" "defmethod" "defonce"})
 
+(def ^:private throw-heads
+  "throw, and slingshot's throw+."
+  #{"throw" "throw+"})
+
+(defn- private?
+  "True if a definition is private: defn-, or ^:private or {:private true}
+  metadata on its name."
+  [head name-node]
+  (or (= "defn-" head)
+    (loop [node name-node]
+      (and (= :meta (some-> node n/tag))
+        (let [[m target] (parse/code-children node)]
+          (or (= :private (token-value m))
+            (and (= :map (n/tag m))
+              (some (fn [[k v]]
+                      (and (= :private (token-value k))
+                        (true? (token-value v))))
+                (partition 2 (parse/code-children m))))
+            (recur target)))))))
+
 (defn- definition
   "A top-level definition's :name (a symbol), :line, :references, the
-  symbols in its body, and :throws?, true if its body throws. A defmethod is
-  named for its multimethod."
+  symbols in its body, :private?, and :throws?, true if its body throws. A
+  defmethod is named for its multimethod."
   [node]
-  (let [[_ name-node & body] (parse/code-children node)
+  (let [[head-node name-node & body] (parse/code-children node)
         definition-name (token-value (unwrap-meta name-node))
         nodes (mapcat #(tree-seq n/inner? parse/code-children %) body)]
     (when (symbol? definition-name)
       {:name definition-name
        :line (:row (meta node))
        :references (into #{} (comp (keep token-value) (filter symbol?)) nodes)
-       :throws? (boolean (some #(= "throw" (parse/head-symbol %)) nodes))})))
+       :private? (boolean (private? (n/string head-node) name-node))
+       :throws? (boolean (some #(throw-heads (parse/head-symbol %)) nodes))})))
 
 ;; Error handling
 
@@ -863,12 +929,16 @@
 
 (defn- thrown-kind
   "What a throw form throws: :typed or :untyped ex-info (by its literal data
-  map), :unknown ex-info data, a :java exception constructed in place, or
-  a :rethrow of something else."
+  map), or a literal map, as slingshot's throw+ can; :unknown ex-info data;
+  a :java exception constructed in place; or a :rethrow of something
+  else."
   [throw-node opts]
   (let [arg (second (parse/code-children throw-node))
         head (some-> arg parse/head-symbol)]
     (cond
+      (= :map (some-> arg n/tag))
+      (if (typed-data? arg opts) :typed :untyped)
+
       (= "ex-info" head)
       (let [data (nth (parse/code-children arg) 2 nil)]
         (cond
@@ -879,14 +949,32 @@
       (or (= "new" head) (some-> head (str/ends-with? "."))) :java
       :else :rethrow)))
 
+(def ^:private log-heads
+  "Calls that log, by name in any namespace."
+  #{"log" "logf" "log!" "error" "errorf" "warn" "warnf" "info" "infof"
+    "debug" "debugf" "trace" "tracef" "fatal" "fatalf" "report" "spy"})
+
+(defn- handling
+  "What a catch clause's body does with what it catches: :rethrows it (or
+  something else, such as a wrapping ex-info), :logs it, or :continues
+  without either."
+  [catch-node]
+  (let [heads (set (keep parse/head-symbol
+                     (mapcat #(tree-seq n/inner? parse/code-children %)
+                       (drop 3 (parse/code-children catch-node)))))]
+    (cond
+      (some throw-heads heads) :rethrows
+      (some log-heads heads) :logs
+      :else :continues)))
+
 (defn- error-handling
-  "Every throw, as {:line :kind}, and every catch clause, as {:line :class
-  :broad?}, in top-level forms. opts, from reader-opts, resolve
-  auto-resolved keywords."
+  "Every throw (and slingshot throw+), as {:line :kind}, and every catch
+  clause, as {:line :class :broad? :handling}, in top-level forms. opts,
+  from reader-opts, resolve auto-resolved keywords."
   [top-level opts]
   (let [nodes (mapcat #(tree-seq n/inner? parse/code-children %) top-level)]
     {:throws (vec (for [node nodes
-                        :when (= "throw" (parse/head-symbol node))]
+                        :when (throw-heads (parse/head-symbol node))]
                     {:line (:row (meta node)) :kind (thrown-kind node opts)}))
      :catches (vec (for [node nodes
                          :when (= "catch" (parse/head-symbol node))
@@ -894,7 +982,8 @@
                                        n/string)]]
                      {:line (:row (meta node))
                       :class class
-                      :broad? (contains? broad-exceptions class)}))}))
+                      :broad? (contains? broad-exceptions class)
+                      :handling (handling node)}))}))
 
 ;; Host interop
 
@@ -1067,17 +1156,18 @@
         interop (reduce + (map :interop files))]
     {:brick brick
      :metrics (merge
-                {:files (count files)
-                 :forms forms
+                {:forms forms
                  :functions (count functions)
+                 :definitions (count (mapcat :definitions files))
                  :mean-function-complexity (mean (map :complexity functions))
                  :mean-function-depth (mean (map :depth functions))
                  :mutable-state (count (mapcat :mutable-state files))
                  :untyped-errors (count (filter (comp #{:untyped :java} :kind)
                                           (mapcat :throws files)))
-                 :catches (count (mapcat :catches files))
-                 :broad-catches (count (filter :broad? (mapcat :catches files)))
-                 :interop interop
+                 :broad-catches (count (filter #(and (:broad? %)
+                                                  (not= :rethrows
+                                                    (:handling %)))
+                                         (mapcat :catches files)))
                  :interop-density (when (pos? forms)
                                     (* 100 (/ interop (double forms))))}
                 (test-metrics files tests))
