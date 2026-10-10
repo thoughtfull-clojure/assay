@@ -127,6 +127,12 @@
     (is (= 1 (first (run ["-w" (str root) "-f" "text" "--fail-on" "new"] {})))
       "without a base, every violation is new")))
 
+(deftest misplaced-rule-test
+  (let [root (workspace)]
+    (configure root "{:dependency-rules {:mutable-state nil}}")
+    (is (= 2 (first (run ["-w" (str root) "-f" "text"] {})))
+      "a rule under the wrong group is a usage error")))
+
 (deftest config-location-test
   (let [root (workspace)]
     (testing "assay.edn at the workspace root is the default"

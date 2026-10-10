@@ -28,8 +28,8 @@ interfaces; `poly check` enforces this.
   (the `connascence` namespace); and the dependency rule checks.
 - `thresholds`: brick and function rules (`:max`, `:min`, and `:std-devs`
   for bricks). To add a rule type, add a method to `evaluate`.
-- `baseline`: compares with a base report; change rules are methods of
-  `evaluate-change`.
+- `baseline`: compares with a base report, setting each violation's
+  status (new, existing, or indirect).
 - `git`: merge-base, changed files, and extracting a revision's tree.
 - `html-report`, `github-report`, `text-report`: render a report map.
 - `cli` (base): parses options and wires the components together.

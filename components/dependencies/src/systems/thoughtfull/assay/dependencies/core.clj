@@ -10,27 +10,64 @@
    [systems.thoughtfull.assay.dependencies.tests :as tests]))
 
 (def default-rules
-  {:stable-dependencies :error
-   :new-dependencies :warning
-   :connascence-of-position {:max 3 :level :warning}
-   :duplicate-code {:min-forms 30 :level :warning}
-   :merge-candidates {:max-size 0.25 :level :warning}
-   :co-change {:since "12 months" :min-shared 5 :min-strength 0.5
-               :max-bricks-per-commit 5 :level :warning}
-   :library-spread {:max-bricks 1 :level :warning}
-   :mutable-state :warning
-   :broad-catch :warning
-   :test-boundary :warning})
+  {:dependency-rules {:stable-dependencies :error
+                      :connascence-of-position {:max 3 :level :warning}
+                      :duplicate-code {:min-forms 30 :level :warning}
+                      :merge-candidates {:max-size 0.25 :level :warning}
+                      :co-change {:since "12 months" :min-shared 5
+                                  :min-strength 0.5 :max-bricks-per-commit 5
+                                  :level :warning}
+                      :library-spread {:max-bricks 1 :level :warning}}
+   :io-rules {:mutable-state :warning}
+   :error-handling-rules {:broad-catch :warning}
+   :test-rules {:test-boundary :warning}})
 
-(defn merge-rules
-  "Merge configured rules over the defaults. A map-valued rule merges key
-  by key, so {:duplicate-code {:min-forms 50}} keeps the default level."
-  [rules]
+(def rule-group-sections
+  "Each rule group's config key and the report section its rules belong
+  to, in the order of the sections."
+  [[:dependency-rules :dependencies]
+   [:io-rules :io]
+   [:error-handling-rules :errors]
+   [:test-rules :tests]])
+
+(def ^:private rule-group
+  "Each rule's group, the config key it belongs under."
+  (into {}
+    (for [[group rules] default-rules
+          rule (keys rules)]
+      [rule group])))
+
+(defn- merge-group
+  "Merge configured rules over a group's defaults. A map-valued rule merges
+  key by key, so {:duplicate-code {:min-forms 50}} keeps the default level."
+  [defaults rules]
   (merge-with (fn [default configured]
                 (if (and (map? default) (map? configured))
                   (merge default configured)
                   configured))
-    default-rules rules))
+    defaults rules))
+
+(defn- check-group
+  "Throw for a rule configured under a group it doesn't belong to."
+  [group rules]
+  (doseq [rule (keys rules)
+          :let [belongs (rule-group rule)]
+          :when (and belongs (not= group belongs))]
+    (throw (ex-info (str (pr-str rule) " belongs under " (pr-str belongs)
+                      ", not " (pr-str group))
+             {:rule rule :group group :belongs belongs}))))
+
+(defn merge-rules
+  [config]
+  (into {}
+    (for [[group defaults] default-rules
+          :let [rules (get config group)]]
+      (do (check-group group rules)
+        [group (merge-group defaults rules)]))))
+
+(defn merge-flat-rules
+  [rules]
+  (merge-group (apply merge (vals default-rules)) rules))
 
 (defn- fmt
   [x]
@@ -230,32 +267,40 @@
   [rule]
   (if (map? rule) (:level rule) rule))
 
+(defn- rule-section
+  "The report section of a rule violation: its rule group's, or
+  dependencies for a violation whose metric names no rule, such as
+  :merge-candidate."
+  [{:keys [metric]}]
+  (get (into {} rule-group-sections) (rule-group metric) :dependencies))
+
 (defn check
   [rules {:keys [workspace bricks used] :as analysis}]
   (let [{:keys [stable-dependencies
                 connascence-of-position duplicate-code
                 merge-candidates co-change library-spread
                 mutable-state broad-catch test-boundary]} rules]
-    (vec (concat
-           (when stable-dependencies
-             (stable-dependency-violations stable-dependencies analysis))
-           (when (level connascence-of-position)
-             (connascence/position-violations connascence-of-position
-               workspace bricks used))
-           (when (level duplicate-code)
-             (connascence/algorithm-violations duplicate-code bricks))
-           (when (level merge-candidates)
-             (merge-candidate-violations merge-candidates analysis))
-           (when (level co-change)
-             (co-change/violations co-change analysis))
-           (when (level library-spread)
-             (libraries/violations library-spread analysis))
-           (when mutable-state
-             (mutable-state-violations mutable-state analysis))
-           (when broad-catch
-             (broad-catch-violations broad-catch analysis))
-           (when test-boundary
-             (tests/violations test-boundary analysis))))))
+    (mapv #(assoc % :section (rule-section %))
+      (concat
+        (when stable-dependencies
+          (stable-dependency-violations stable-dependencies analysis))
+        (when (level connascence-of-position)
+          (connascence/position-violations connascence-of-position
+            workspace bricks used))
+        (when (level duplicate-code)
+          (connascence/algorithm-violations duplicate-code bricks))
+        (when (level merge-candidates)
+          (merge-candidate-violations merge-candidates analysis))
+        (when (level co-change)
+          (co-change/violations co-change analysis))
+        (when (level library-spread)
+          (libraries/violations library-spread analysis))
+        (when mutable-state
+          (mutable-state-violations mutable-state analysis))
+        (when broad-catch
+          (broad-catch-violations broad-catch analysis))
+        (when test-boundary
+          (tests/violations test-boundary analysis))))))
 
 (defn neighbors
   [bricks edges]
@@ -292,9 +337,7 @@
                        bricks))
         pairs (distinct (map (juxt :from :to) edges))
         red (problem-edges violations)
-        new-edges (into #{} (comp (filter #(= :new-dependency (:metric %)))
-                              (map (juxt (comp :name :brick) :subject)))
-                    violations)
+        new-edges (into #{} (comp (filter :new?) (map (juxt :from :to))) edges)
         co-changes (distinct (for [{:keys [metric brick subject]} violations
                                    :when (= :co-change metric)]
                                [(:name brick) subject]))]

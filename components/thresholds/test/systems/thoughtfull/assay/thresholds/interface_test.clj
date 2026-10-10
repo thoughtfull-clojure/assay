@@ -95,6 +95,41 @@
     (is (= (get-in thresholds/default-config [:function-thresholds :complexity])
           (get-in merged [:function-thresholds :complexity])))))
 
+(deftest cohesion-default-test
+  (let [check (fn [type cohesion]
+                (map (juxt :metric :level :message)
+                  (thresholds/check thresholds/default-config
+                    [{:brick {:name "x" :type type}
+                      :metrics {:cohesion cohesion}}])))]
+    (is (= [[:cohesion :warning "0.4 is below the minimum of 0.5"]]
+          (check :component 0.4)))
+    (is (empty? (check :component 0.5)))
+    (is (empty? (check :base 0.1)) "bases are glue, so low is expected")))
+
+(deftest test-size-defaults-test
+  (let [component (fn [n assertions forms]
+                    {:brick {:name n :type :component}
+                     :metrics {:assertions-per-test assertions
+                               :forms-per-test forms}})
+        violations (thresholds/check thresholds/default-config
+                     (concat (for [i (range 5)]
+                               (component (str "c" i) (+ 2 (mod i 2))
+                                 (+ 20 (mod i 2))))
+                       [(component "big" 12 90)
+                        {:brick {:name "base" :type :base}
+                         :metrics {:assertions-per-test 50
+                                   :forms-per-test 500}}]))]
+    (is (= #{["big" :assertions-per-test] ["big" :forms-per-test]
+             ["base" :assertions-per-test] ["base" :forms-per-test]}
+          (set (map (juxt (comp :name :brick) :metric) violations)))
+      (str "a brick more than 2 standard deviations above the other"
+        " components, bases included"))
+    (is (every? #(= :warning (:level %)) violations))
+    (is (re-find #"above the mean of 6 other components"
+          (:message (first (filter #(= "base" (get-in % [:brick :name]))
+                             violations))))
+      "a base is compared with the components")))
+
 (deftest worse-level-test
   (is (= :error (thresholds/worse-level :warning :error)))
   (is (= :warning (thresholds/worse-level nil :warning)))

@@ -363,6 +363,22 @@
                                     {:connascence-of-position {:max 2}}
                                     analysis))))))))
 
+(deftest merge-rules-test
+  (let [merged (dependencies/merge-rules
+                 {:dependency-rules {:duplicate-code {:min-forms 50}}
+                  :error-handling-rules {:broad-catch :error}})]
+    (is (= #{:dependency-rules :io-rules :error-handling-rules :test-rules}
+          (set (keys merged))))
+    (is (= {:min-forms 50 :level :warning}
+          (get-in merged [:dependency-rules :duplicate-code]))
+      "settings merge over the defaults")
+    (is (= {:broad-catch :error} (:error-handling-rules merged)))
+    (is (= {:mutable-state :warning} (:io-rules merged)))
+    (is (= {:test-boundary :warning} (:test-rules merged))))
+  (is (thrown-with-msg? clojure.lang.ExceptionInfo
+        #":broad-catch belongs under :error-handling-rules, not :dependency-rules"
+        (dependencies/merge-rules {:dependency-rules {:broad-catch nil}}))))
+
 (deftest neighbors-test
   (is (= [{:brick {:name "a"} :depends-on ["b" "c"] :depended-on-by []}
           {:brick {:name "b"} :depends-on [] :depended-on-by ["a"]}]
@@ -385,9 +401,8 @@
           [{:brick {:name "cli" :type :base}}
            {:brick {:name "a" :type :component}}
            {:brick {:name "b" :type :component}}]
-          [{:from "cli" :to "a"} {:from "a" :to "b"} {:from "b" :to "a"}
-           {:from "cli" :to "a"}]
+          [{:from "cli" :to "a"} {:from "a" :to "b" :new? true}
+           {:from "b" :to "a"} {:from "cli" :to "a"}]
           [{:metric :stable-dependencies :brick {:name "a"} :subject "b"}
            {:metric :stable-dependencies :brick {:name "b"} :subject "a"}
-           {:metric :new-dependency :brick {:name "a"} :subject "b"}
            {:metric :co-change :brick {:name "cli"} :subject "b"}]))))

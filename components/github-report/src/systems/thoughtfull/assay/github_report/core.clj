@@ -148,6 +148,23 @@
   [violations]
   (sort-by (comp status-order :status) (thresholds/by-severity violations)))
 
+(def ^:private section-markers
+  "A colored square for each section, since GitHub strips the styles that
+  could color a cell. Red and yellow are left out: they mean error and
+  warning."
+  {:dependencies "🟦"
+   :complexity "🟪"
+   :modularity "🟩"
+   :io "🟫"
+   :errors "🟧"
+   :tests "⬜"})
+
+(defn- metric-text
+  "A violation's metric, after its section's marker."
+  [violation]
+  (str (section-markers (metrics/violation-section violation)) " "
+    (metrics/label violation)))
+
 (defn- violation-table
   [violations status?]
   (table (cond-> ["Level" "Brick" "Metric" "Detail"]
@@ -156,7 +173,7 @@
           violations]
       (cond-> [(level-mark level)
                (brick-label brick)
-               (metrics/label violation)
+               (metric-text violation)
                (str message (location-text location))]
         status? (conj (name status))))))
 
@@ -183,7 +200,7 @@
     (str "### Resolved\n\n"
       (table ["Brick" "Metric" "Detail"]
         (for [{:keys [brick message] :as violation} resolved]
-          [(brick-label brick) (metrics/label violation) message])))))
+          [(brick-label brick) (metric-text violation) message])))))
 
 (defn- metric-cell
   [level text]
@@ -313,7 +330,7 @@
   graph."
   [report]
   (for [{:keys [key label] :as section} metrics/sections]
-    (str "### " label "\n\n"
+    (str "### " (section-markers key) " " label "\n\n"
       (when (= :dependencies key)
         (some-> (dependencies-graph report) (str "\n\n")))
       (section-table section report)

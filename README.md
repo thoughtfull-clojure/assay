@@ -96,7 +96,7 @@ namespace's aliases and refers.
 
 Low cohesion means a brick is mostly glue between other bricks. That's
 expected of a base; a base with high cohesion holds logic that belongs in
-a component.
+a component. A component below `0.5` gets a warning by default.
 
 ### Connascence
 
@@ -215,8 +215,11 @@ and the files changed since then, including uncommitted ones. It marks
 each violation with a status:
 
 - **new**: introduced in a brick that changed. A function or dependency is
-  matched by name, so a function that moves is still the same.
-- **existing**: also present at the merge-base.
+  matched by name, so a function that moves is still the same. A function
+  violation present at the merge-base is new too when the change made it
+  worse, such as a complex function that grew more complex; its message
+  ends with the value at the merge-base.
+- **existing**: also present at the merge-base, and no worse.
 - **indirect**: new, but in a brick that didn't change. A statistical
   threshold can move when other bricks change.
 
@@ -236,27 +239,30 @@ Assay reads `assay.edn` at the workspace root, or the file you pass to
                        :depth [{:rule :max :value 8 :level :warning}]
                        :forms [{:rule :max :value 150 :level :warning}]
                        :params [{:rule :max :value 4 :level :warning}]}
- :brick-thresholds {:mean-function-complexity [{:rule :std-devs :value 2
-                                                :level :warning}]
-                    :abstractness [{:rule :min :value 0.5 :level :warning
-                                    :types #{:component}}]}
+ :brick-thresholds {:abstractness [{:rule :min :value 0.5 :level :warning
+                                    :types #{:component}}]
+                    :cohesion [{:rule :min :value 0.5 :level :warning
+                                :types #{:component}}]
+                    :assertions-per-test [{:rule :std-devs :value 2
+                                           :level :warning
+                                           :peer-types #{:component}}]
+                    :forms-per-test [{:rule :std-devs :value 2
+                                      :level :warning
+                                      :peer-types #{:component}}]}
  :dependency-rules {:stable-dependencies :error
-                    :new-dependencies :warning
                     :connascence-of-position {:max 3 :level :warning}
                     :duplicate-code {:min-forms 30 :level :warning}
                     :merge-candidates {:max-size 0.25 :level :warning}
                     :library-spread {:max-bricks 1 :level :warning}
-                    :mutable-state :warning
-                    :broad-catch :warning
-                    :test-boundary :warning
                     :co-change {:since "12 months" :min-shared 5
                                 :min-strength 0.5 :max-bricks-per-commit 5
                                 :level :warning}}
- :change-thresholds {:forms [{:rule :max-increase-percent :value 50}]}}
+ :io-rules {:mutable-state :warning}
+ :error-handling-rules {:broad-catch :warning}
+ :test-rules {:test-boundary :warning}}
 ```
 
-That example shows the defaults, except for `:change-thresholds`, which has
-none.
+That example shows the defaults.
 
 Threshold rules:
 
@@ -264,8 +270,9 @@ Threshold rules:
 - `{:rule :min :value n}`: the metric must be at least `n`.
 - `{:rule :std-devs :value k}`: bricks only. The metric must be at most `k`
   standard deviations above the mean of the other bricks of the same type.
-  Assay compares components with components and bases with bases, and
-  skips the rule when there are fewer than `:min-peers` other bricks
+  Assay compares components with components and bases with bases, or
+  with the bricks of `:peer-types`, such as `#{:component}`, when given.
+  It skips the rule when there are fewer than `:min-peers` other bricks
   (default 3).
 
 Every rule takes an optional `:level` of `:error`, the default, or
@@ -273,21 +280,13 @@ Every rule takes an optional `:level` of `:error`, the default, or
 `#{:component}`. A configured metric replaces its default rules, and an
 empty vector turns them off.
 
-Dependency rules set a level, or `nil` to turn a check off:
+Rules set a level, or `nil` to turn a check off. Each belongs under the
+key for its report section; a rule under the wrong key is a usage error.
+
+`:dependency-rules`:
 
 - `:stable-dependencies`: a brick depends on a less stable brick, which
   breaks the Stable Dependencies Principle.
-- `:new-dependencies`: with `--base`, a dependency between bricks that the
-  base didn't have.
-- `:mutable-state`: a top-level atom, ref, agent, volatile, or dynamic var,
-  or an `alter-var-root` call, in a component. Bases are the imperative
-  shell, so they don't count.
-- `:broad-catch`: a `catch` clause for `Exception`, `RuntimeException`,
-  `Throwable`, or `Object` in a component. Bases, at the edges, are where
-  catching belongs.
-- `:test-boundary`: a test that requires another brick's namespace other
-  than its interface. Tests that reach into an implementation break when
-  it changes, even though its interface didn't.
 - `:connascence-of-position`, with `:max`: an interface function that other
   bricks call has more than `:max` positional parameters.
 - `:duplicate-code`, with `:min-forms`: code of at least `:min-forms` forms
@@ -311,11 +310,23 @@ Dependency rules set a level, or `nil` to turn a check off:
 These five take a map with a `:level`. A configured map merges over the
 default, so `{:duplicate-code {:min-forms 50}}` keeps the default level.
 
-`:change-thresholds` apply only with `--base`, to the bricks that changed:
+`:io-rules`:
 
-- `{:rule :max-increase :value n}`: the metric may grow by at most `n`.
-- `{:rule :max-increase-percent :value p}`: the metric may grow by at most
-  `p` percent.
+- `:mutable-state`: a top-level atom, ref, agent, volatile, or dynamic var,
+  or an `alter-var-root` call, in a component. Bases are the imperative
+  shell, so they don't count.
+
+`:error-handling-rules`:
+
+- `:broad-catch`: a `catch` clause for `Exception`, `RuntimeException`,
+  `Throwable`, or `Object` in a component. Bases, at the edges, are where
+  catching belongs.
+
+`:test-rules`:
+
+- `:test-boundary`: a test that requires another brick's namespace other
+  than its interface. Tests that reach into an implementation break when
+  it changes, even though its interface didn't.
 
 ## Continuous integration
 

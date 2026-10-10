@@ -32,14 +32,14 @@
 (deftest summary-test
   (let [summary (github-report/summary report)]
     (is (str/starts-with? summary "## Assay: ws\n\n2 bricks, 1 errors, 1 warnings."))
-    (is (str/includes? summary "| ❌ error | component a | Mean function complexity |"))
+    (is (str/includes? summary "| ❌ error | component a | 🟪 Mean function complexity |"))
     (is (str/includes? summary "**12.0** ❌"))
     (is (str/includes? summary "**300** ⚠️"))))
 
 (deftest base-rows-test
   (let [summary (github-report/summary report)
         section (fn [heading]
-                  (second (re-find (re-pattern (str "(?s)### " heading
+                  (second (re-find (re-pattern (str "(?s)### \\S+ " heading
                                                  "\n(.*?)###"))
                             summary)))]
     (is (not (str/includes? (section "Dependencies") "| base b |"))
@@ -117,12 +117,29 @@
                        :message "12 is above the maximum of 10"})
                     (assoc :edges [{:from "a" :to "b"}])))
         sections (map second (re-seq #"(?m)^### (.*)$" summary))]
-    (is (= ["Violations" "Dependencies" "Complexity" "Modularity"
-            "I/O and mutability" "Error handling" "Tests"]
-          sections))
+    (is (= ["Violations" "🟦 Dependencies" "🟪 Complexity" "🟩 Modularity"
+            "🟫 I/O and mutability" "🟧 Error handling" "⬜ Tests"]
+          sections)
+      "each section's heading has its marker")
     (is (str/includes? summary "```mermaid\ngraph TD\n  b0[\"a\"]"))
     (is (= 6 (count (re-seq #"<details><summary>What these metrics mean" summary)))
       "a legend in each section")))
+
+(deftest violation-marker-test
+  (let [summary (github-report/summary
+                  (assoc report :violations
+                    [{:scope :dependency :section :errors
+                      :brick {:name "a" :type :component}
+                      :metric :broad-catch :label "Broad catch"
+                      :level :warning :message "catches Exception"}
+                     {:scope :dependency
+                      :brick {:name "a" :type :component}
+                      :metric :merge-candidate :label "Merge candidate"
+                      :level :warning :message "could merge into b"}]))]
+    (is (str/includes? summary "| 🟧 Broad catch |")
+      "a rule violation is marked with its section")
+    (is (str/includes? summary "| 🟦 Merge candidate |")
+      "a violation without a section is a dependency's")))
 
 (deftest brick-annotation-test
   (is (= [(str "::warning file=components/a/deps.edn,line=1,"
@@ -137,8 +154,9 @@
     "a violation of a whole brick is anchored to the brick's deps.edn"))
 
 (deftest comparison-section-order-test
-  (is (= ["Violations" "Resolved" "Dependencies" "Complexity" "Modularity"
-          "I/O and mutability" "Error handling" "Tests"]
+  (is (= ["Violations" "Resolved" "🟦 Dependencies" "🟪 Complexity"
+          "🟩 Modularity" "🟫 I/O and mutability" "🟧 Error handling"
+          "⬜ Tests"]
         (map second (re-seq #"(?m)^### (.*)$"
                       (github-report/summary
                         (-> compared

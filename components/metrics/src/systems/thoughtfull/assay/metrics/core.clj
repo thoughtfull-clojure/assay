@@ -272,6 +272,13 @@
                   :columns (filterv #(= key (:section %)) columns)}
            (components-only-sections key) (assoc :components-only true)))))
 
+(defn violation-section
+  [{:keys [section scope metric]}]
+  (or section
+    (when (= :function scope) :complexity)
+    (:section (metric-index metric))
+    :dependencies))
+
 (defn section-measurements
   [{:keys [components-only]} measurements]
   (if components-only

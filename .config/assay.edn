@@ -7,11 +7,9 @@
  :brick-thresholds {}
  :function-thresholds {}
 
- ;; Levels for dependency checks: :error, :warning, or nil to turn off.
+ ;; Levels for rule checks: :error, :warning, or nil to turn off. Each
+ ;; rule belongs under the key for its report section.
  :dependency-rules {}
-
- ;; Rules for how much a brick's metrics may grow, applied with --base.
- :change-thresholds {:mean-function-complexity [{:rule :max-increase :value 1
-                                                 :level :warning}]
-                     :forms [{:rule :max-increase-percent :value 50
-                              :level :warning}]}}
+ :io-rules {}
+ :error-handling-rules {}
+ :test-rules {}}

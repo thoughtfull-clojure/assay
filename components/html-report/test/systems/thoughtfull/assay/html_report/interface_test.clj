@@ -26,7 +26,7 @@
    :thresholds {:brick-thresholds {:abstractness [{:rule :min :value 0.5
                                                    :types #{:component}}]}
                 :function-thresholds {:complexity [{:rule :max :value 10}]}}
-   :dependency-rules {:new-dependencies :warning :stable-dependencies nil}})
+   :rules {:dependency-rules {:stable-dependencies nil}}})
 
 (deftest render-test
   (let [html (html-report/render report)]
@@ -56,9 +56,7 @@
                                      :base-metrics {"a" {:mean-function-complexity 9}}
                                      :resolved [{:brick {:name "z" :type :component}
                                                  :metric :lines
-                                                 :message "fixed"}]}
-                   :change-thresholds {:forms [{:rule :max-increase
-                                                :value 50}]})))]
+                                                 :message "fixed"}]})))]
     (is (str/includes? html "<code>origin/main</code>"))
     (is (str/includes? html "<code>0123456789ab</code>"))
     (is (str/includes? html
@@ -67,7 +65,6 @@
       "a changed brick's value shows how much it changed")
     (is (str/includes? html ">existing</span>"))
     (is (str/includes? html "<h2>Resolved</h2>"))
-    (is (str/includes? html "<td>Changes (with --base)</td><td>Forms</td><td>increase ≤ 50</td>"))
     (is (not (str/includes? html "class=\"num error\""))
       "existing violations are not highlighted")))
 
@@ -161,6 +158,39 @@
             "base</span></td><td class=\"num\">–</td>"
             "<td class=\"num\">0.25</td>"))
       "a base has no abstractness, but has cohesion")))
+
+(deftest rule-groups-test
+  (let [html (html-report/render
+               (assoc report :rules
+                 {:dependency-rules {:stable-dependencies :error}
+                  :io-rules {:mutable-state :warning}
+                  :error-handling-rules {:broad-catch :warning}
+                  :test-rules {:test-boundary :warning}}))]
+    (is (= ["Dependencies" "Complexity" "Modularity" "I/O and mutability"
+            "Error handling" "Tests"]
+          (map second
+            (re-seq #"<td class=\"cat cat-[a-z]+\" rowspan=\"\d+\">([^<]+)</td>"
+              html)))
+      "the thresholds table is grouped by category, in section order")
+    (is (str/includes? html
+          (str "<td class=\"cat cat-complexity\" rowspan=\"1\">Complexity</td>"
+            "<td>Functions</td><td>Complexity</td><td>≤ 10</td>"))
+      "a category's cell spans its rows")
+    (is (str/includes? html
+          (str "<td class=\"cat cat-modularity\" rowspan=\"1\">Modularity"
+            "</td><td>Bricks</td><td>Abstractness</td>")))
+    (is (str/includes? html
+          (str "<td class=\"cat cat-errors\" rowspan=\"1\">Error handling"
+            "</td><td>Bricks</td><td>Broad catch</td>")))))
+
+(deftest section-colors-test
+  (let [html (html-report/render report)]
+    (is (str/includes? html
+          "<td class=\"cat cat-complexity\">Complexity</td><td>12 is above")
+      "a violation's metric is tinted with its section's color")
+    (is (str/includes? html
+          "<div class=\"section cat-dependencies\"><h2>Dependencies</h2>")
+      "each section, its heading and table, has its color")))
 
 (deftest legend-code-test
   (is (str/includes? (html-report/render report)

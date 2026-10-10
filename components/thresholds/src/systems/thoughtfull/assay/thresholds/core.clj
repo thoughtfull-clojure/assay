@@ -5,9 +5,14 @@
 
 (def default-config
   {:brick-thresholds
-   {:mean-function-complexity [{:rule :std-devs :value 2 :level :warning}]
-    :abstractness [{:rule :min :value 0.5 :level :warning
-                    :types #{:component}}]}
+   {:abstractness [{:rule :min :value 0.5 :level :warning
+                    :types #{:component}}]
+    :cohesion [{:rule :min :value 0.5 :level :warning
+                :types #{:component}}]
+    :assertions-per-test [{:rule :std-devs :value 2 :level :warning
+                           :peer-types #{:component}}]
+    :forms-per-test [{:rule :std-devs :value 2 :level :warning
+                      :peer-types #{:component}}]}
    :function-thresholds
    {:complexity [{:rule :max :value 10 :level :error}]
     :depth [{:rule :max :value 8 :level :warning}]
@@ -55,8 +60,17 @@
     {:limit limit
      :message (str (fmt value) " is below the minimum of " (fmt limit))}))
 
+(defn- peer-noun
+  "What a :std-devs rule's peer is called: its type, when the rule names
+  one."
+  [peer-types]
+  (if (= 1 (count peer-types))
+    (name (first peer-types))
+    "brick"))
+
 (defmethod evaluate :std-devs
-  [{k :value :keys [min-peers] :or {min-peers 3}} value peer-values]
+  [{k :value :keys [min-peers peer-types] :or {min-peers 3}} value
+   peer-values]
   (when (>= (count peer-values) (max 2 min-peers))
     (let [m (mean peer-values)
           sd (std-dev peer-values)
@@ -66,12 +80,13 @@
         {:limit limit
          :stats stats
          :message (if (zero? sd)
-                    (str (fmt value) " is above every other brick ("
-                      (fmt m) ")")
+                    (str (fmt value) " is above every other "
+                      (peer-noun peer-types) " (" (fmt m) ")")
                     (str (fmt value) " is "
                       (format "%.1f" (/ (- value m) sd))
                       " standard deviations above the mean of "
-                      (count peer-values) " other bricks ("
+                      (count peer-values) " other "
+                      (peer-noun peer-types) "s ("
                       (fmt m) " ± " (fmt sd) "), over the limit of "
                       (fmt k)))}))))
 
@@ -81,12 +96,15 @@
            {:rule rule})))
 
 (defn- peer-values
-  [measurements measurement metric]
-  (let [{:keys [type name]} (:brick measurement)]
+  "The metric's values in the other bricks a rule compares measurement
+  with: those of the rule's :peer-types, or of the brick's own type."
+  [measurements measurement metric {:keys [peer-types]}]
+  (let [{:keys [type name]} (:brick measurement)
+        peer? (or peer-types #{type})]
     (for [other measurements
           :let [brick (:brick other)
                 v (get-in other [:metrics metric])]
-          :when (and (= type (:type brick))
+          :when (and (peer? (:type brick))
                   (not= name (:name brick))
                   (some? v))]
       v)))
@@ -104,7 +122,8 @@
               value (get-in measurement [:metrics metric])
               result (when (and (some? value) (applies? rule brick))
                        (evaluate rule value
-                         (peer-values measurements measurement metric)))]
+                         (peer-values measurements measurement metric
+                           rule)))]
         :when result]
     (merge {:scope :brick
             :brick brick

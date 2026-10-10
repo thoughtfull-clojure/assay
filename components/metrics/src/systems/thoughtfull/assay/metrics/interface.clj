@@ -56,6 +56,14 @@
   for a section whose table leaves bases out."
   core/sections)
 
+(defn violation-section
+  "The key of the section (as in sections) a violation, or a threshold rule
+  given as {:scope :metric}, belongs to: its :section, if it has one, as
+  rule violations do; complexity for a function; or its brick metric's
+  section."
+  [violation]
+  (core/violation-section violation))
+
 (defn section-measurements
   "The measurements a section's table shows: components only, for a
   section marked :components-only, otherwise all of them."

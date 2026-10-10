@@ -40,6 +40,9 @@
   --border: #e3e3e0; --error: #b3261e; --error-bg: #fce8e6;
   --warning: #8a5300; --warning-bg: #fef3d6; --ok: #1e6b3a;
   --outlier: #5b3cc4;
+  --cat-dependencies: #e2ecfb; --cat-complexity: #ece4fb;
+  --cat-modularity: #e1f2e5; --cat-io: #efe5da; --cat-errors: #fde2c4;
+  --cat-tests: #ececea;
 }
 @media (prefers-color-scheme: dark) {
   :root {
@@ -47,7 +50,22 @@
     --border: #2e3034; --error: #f2b8b5; --error-bg: #3c1d1b;
     --warning: #f5cf7a; --warning-bg: #3a2c0c; --ok: #8fd4a6;
     --outlier: #b9a6f5;
+    --cat-dependencies: #1c2b44; --cat-complexity: #2c2245;
+    --cat-modularity: #1b3324; --cat-io: #352a20; --cat-errors: #43290f;
+    --cat-tests: #2b2c30;
   }
+}
+.cat-dependencies { --cat: var(--cat-dependencies); }
+.cat-complexity { --cat: var(--cat-complexity); }
+.cat-modularity { --cat: var(--cat-modularity); }
+.cat-io { --cat: var(--cat-io); }
+.cat-errors { --cat: var(--cat-errors); }
+.cat-tests { --cat: var(--cat-tests); }
+td.cat, .section > .scroll thead th { background: var(--cat); }
+td[rowspan] { vertical-align: top; font-weight: 600; }
+.section > h2 {
+  display: inline-block; background: var(--cat);
+  padding: 2px 12px; border-radius: 6px;
 }
 * { box-sizing: border-box; }
 body {
@@ -233,6 +251,20 @@ details.legend dd code {
   [violations]
   (sort-by (comp status-order :status) (thresholds/by-severity violations)))
 
+(defn- section-class
+  [section]
+  (str "cat-" (name section)))
+
+(defn- metric-label-cell
+  "A metric's label in a cell tinted with its section's color."
+  [section label]
+  [:td {:class (str "cat " (section-class section))} label])
+
+(defn- violation-metric-cell
+  [violation]
+  (metric-label-cell (metrics/violation-section violation)
+    (metrics/label violation)))
+
 (defn- violation-rows
   [violations status?]
   (table (cond-> ["Level" "Brick" "Metric" "Detail" "Location"]
@@ -240,7 +272,7 @@ details.legend dd code {
     (for [{:keys [brick level message status] :as v} violations]
       (cond-> [(level-badge level)
                (brick-cell brick)
-               (metrics/label v)
+               (violation-metric-cell v)
                message
                (location (:location v))]
         status? (conj (badge (str "status " (name status))
@@ -271,7 +303,7 @@ details.legend dd code {
   [resolved]
   (table ["Brick" "Metric" "Detail"]
     (for [{:keys [brick message] :as v} resolved]
-      [(brick-cell brick) (metrics/label v) message])))
+      [(brick-cell brick) (violation-metric-cell v) message])))
 
 ;; Metrics
 
@@ -575,27 +607,31 @@ function viewer(graph) {
 ;; Thresholds
 
 (defn- rule-text
-  "A rule in short notation, such as \"≤ 10\" or \"increase ≤ 50%\"."
-  [{:keys [rule value types]}]
+  "A rule in short notation, such as \"≤ 10\"."
+  [{:keys [rule value types peer-types]}]
   (str
     (case rule
       :max (str "≤ " value)
       :min (str "≥ " value)
-      :std-devs (str "≤ mean + " value "σ of other bricks")
-      :max-increase (str "increase ≤ " value)
-      :max-increase-percent (str "increase ≤ " value "%")
+      :std-devs (str "≤ mean + " value "σ of other "
+                  (if (= 1 (count peer-types))
+                    (str (name (first peer-types)) "s")
+                    "bricks"))
       (pr-str rule))
     (when types
       (str " (" (str/join ", " (map #(str (name %) "s") (sort types))) ")"))))
 
 (defn- threshold-rows
+  "A row map for each threshold rule: its :section, and its :cells after
+  the category."
   [applies-to scope thresholds]
   (for [[metric rules] (sort-by key thresholds)
         {:keys [level] :or {level :error} :as rule} rules]
-    [applies-to
-     (metrics/label {:scope scope :metric metric})
-     (rule-text rule)
-     (level-badge level)]))
+    {:section (metrics/violation-section {:scope scope :metric metric})
+     :cells [applies-to
+             (metrics/label {:scope scope :metric metric})
+             (rule-text rule)
+             (level-badge level)]}))
 
 (defn- percent
   [x]
@@ -605,8 +641,6 @@ function viewer(graph) {
   "Each dependency rule's [metric rule] text, from its settings."
   {:stable-dependencies (constantly ["Stable dependencies"
                                      "only on more stable bricks"])
-   :new-dependencies (constantly ["New dependencies"
-                                  "none the base didn't have"])
    :mutable-state (constantly ["Mutable state" "none in components"])
    :broad-catch (constantly ["Broad catch" "none in components"])
    :test-boundary (constantly ["Test boundary"
@@ -643,25 +677,47 @@ function viewer(graph) {
     (text setting)
     [(name rule) ""]))
 
-(defn- dependency-rows
-  [rules]
+(defn- rule-group-rows
+  [section rules]
   (for [[rule setting] (sort-by key rules)
         :let [level (if (map? setting) (:level setting) setting)
               [metric text] (dependency-rule-text rule
                               (when (map? setting) setting))]]
-    ["Dependencies" metric text (if level (level-badge level) "off")]))
+    {:section section
+     :cells ["Bricks" metric text (if level (level-badge level) "off")]}))
+
+(defn- category-group
+  "A section's rows, the first starting with a tinted category cell that
+  spans them all."
+  [{:keys [key label]} rows]
+  (cons (cons [:td {:class (str "cat " (section-class key))
+                    :rowspan (count rows)}
+               label]
+          (:cells (first rows)))
+    (map :cells (rest rows))))
+
+(defn- category-rows
+  "Rows grouped by section, in the report's order."
+  [rows]
+  (let [by-section (group-by :section rows)]
+    (mapcat #(when-let [group (by-section (:key %))]
+               (category-group % group))
+      metrics/sections)))
 
 (defn- thresholds-section
-  "Every rule in one table."
-  [{:keys [thresholds change-thresholds dependency-rules]}]
+  "Every rule in one table, grouped by category."
+  [{:keys [thresholds rules]}]
   (list
     [:h2 "Thresholds"]
-    (table ["Applies to" "Metric" "Rule" "Level"]
-      (concat
-        (threshold-rows "Functions" :function (:function-thresholds thresholds))
-        (threshold-rows "Bricks" :brick (:brick-thresholds thresholds))
-        (dependency-rows dependency-rules)
-        (threshold-rows "Changes (with --base)" :brick change-thresholds)))))
+    (table ["Category" "Applies to" "Metric" "Rule" "Level"]
+      (category-rows
+        (concat
+          (threshold-rows "Functions" :function
+            (:function-thresholds thresholds))
+          (threshold-rows "Bricks" :brick (:brick-thresholds thresholds))
+          (for [[group section] dependencies/rule-group-sections
+                row (rule-group-rows section (get rules group))]
+            row))))))
 
 ;; Page
 
@@ -704,14 +760,14 @@ function viewer(graph) {
     (violations-table report)
     (resolved-section report)
     (for [{:keys [key label columns] :as section} metrics/sections]
-      (list
-        [:h2 label]
-        (when (= :dependencies key)
-          (dependencies-section report))
-        (section-table section bricks violations comparison)
-        (when (= :io key)
-          (shared-libraries-table report))
-        (legend columns)))
+      [:div {:class (str "section " (section-class key))}
+       [:h2 label]
+       (when (= :dependencies key)
+         (dependencies-section report))
+       (section-table section bricks violations comparison)
+       (when (= :io key)
+         (shared-libraries-table report))
+       (legend columns)])
     (thresholds-section report)))
 
 (defn render

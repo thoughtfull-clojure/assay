@@ -7,7 +7,7 @@
   - Efferent (Ce): interfaces this brick depends on.
   - Instability: Ce / (Ca + Ce), undefined for a brick with neither.
   - Abstractness: 1 - interface definitions / all definitions. A small
-    interface over a large implementation is abstract; bases are 0.
+    interface over a large implementation is abstract; bases have none.
   - Cohesion: references to the brick's own namespaces / references to any
     workspace namespace.
   - Shared keywords: keywords this brick uses that another brick also
@@ -20,21 +20,29 @@
   - Untested interface: a component's interface definitions that no test
     in the workspace mentions.
 
-  Dependency rules map a check to a level (:error or :warning), or to nil to
-  turn it off:
+  Rules map a check to a level (:error or :warning), or to nil to turn it
+  off. They come in groups, each a config key named for the report section
+  the rule belongs to. :dependency-rules:
 
   - :stable-dependencies flags a dependency on a less stable brick (the
     Stable Dependencies Principle).
-  - :new-dependencies flags a dependency that is not in the base, when
-    comparing with one (applied by the baseline component).
+
+  :io-rules:
+
   - :mutable-state flags top-level atoms, refs, agents, volatiles, and
     dynamic vars, and alter-var-root calls, in components.
+
+  :error-handling-rules:
+
   - :broad-catch flags catch clauses for Exception, RuntimeException,
     Throwable, or Object in components.
+
+  :test-rules:
+
   - :test-boundary flags a require, in a brick's tests, of another brick's
     namespace other than its interface.
 
-  Five rules take settings as a map with :level:
+  Five dependency rules take settings as a map with :level:
 
   - :connascence-of-position {:max n} flags interface functions that other
     bricks call with more than n positional parameters.
@@ -56,8 +64,15 @@
    [systems.thoughtfull.assay.dependencies.core :as core]))
 
 (def default-rules
-  "Dependency rules used when no configuration overrides them."
+  "Rules used when no configuration overrides them: a map of each group's
+  config key (:dependency-rules, :io-rules, :error-handling-rules, and
+  :test-rules) to its rules."
   core/default-rules)
+
+(def rule-group-sections
+  "Each rule group's config key and the report section (a key of
+  metrics/sections) its rules belong to, in the order of the sections."
+  core/rule-group-sections)
 
 (defn analyze
   "Add dependency metrics to measurements (from the metrics component),
@@ -74,16 +89,21 @@
   (core/analyze workspace measurements))
 
 (defn check
-  "Violations of dependency rules (merged over default-rules) in an
-  analysis from analyze, with :commits added for the :co-change rule."
+  "Violations of rules in an analysis from analyze, with :commits added for
+  the :co-change rule. rules maps any group's rules to their settings,
+  merged over every group's defaults, as from (apply merge (vals
+  (merge-rules config))). Each violation has the :section of its rule's
+  group."
   [rules analysis]
-  (core/check (core/merge-rules rules) analysis))
+  (core/check (core/merge-flat-rules rules) analysis))
 
 (defn merge-rules
-  "Merge configured dependency rules over default-rules. A map-valued rule
-  merges key by key."
-  [rules]
-  (core/merge-rules rules))
+  "Merge each group of rules in config over its defaults, returning a map
+  shaped like default-rules. A map-valued rule merges key by key. Throws
+  for a rule configured under the wrong group, such as :broad-catch under
+  :dependency-rules."
+  [config]
+  (core/merge-rules config))
 
 (defn neighbors
   "For each brick, in order: a map of :brick, :depends-on, and
@@ -95,7 +115,7 @@
 (defn mermaid
   "A Mermaid flowchart of the brick graph, top-down. Bases have rounded
   ends. Edges in a stable-dependencies violation are red, co-change
-  violations add dotted amber lines without arrows, and new
-  dependencies (from comparing with a base) are dashed."
+  violations add dotted amber lines without arrows, and edges marked :new?
+  (by comparing with a base) are dashed."
   [bricks edges violations]
   (core/mermaid bricks edges violations))

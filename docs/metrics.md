@@ -122,8 +122,8 @@ so compare them with the brick's peers and with the brick's history.
 Size alone isn't a problem, but a large brick is more likely to hold
 several responsibilities. When a brick grows well past its peers, look for
 parts that don't use each other, which suggest where to split it. A
-`:max-increase-percent` change threshold catches a brick that grows
-suddenly, often because a feature landed in the wrong place.
+brick that grows suddenly, with `--base` showing how much, often means a
+feature landed in the wrong place.
 
 ### Mean function complexity
 
@@ -133,9 +133,9 @@ the brick works at too low a level or handles many special cases. That can
 mean its data needs a better shape, so that the cases go away rather than
 move.
 
-The default `:std-devs` warning flags a brick whose mean stands out from
-its peers. A rising mean, which a `:max-increase` change threshold
-catches, shows a brick getting harder to work in over time.
+The report outlines a brick whose mean stands out from its peers, and a
+`:std-devs` rule can flag one. A rising mean, which `--base` shows, means
+a brick getting harder to work in over time.
 
 ### Mean nesting depth
 
@@ -256,9 +256,10 @@ they render the same report is the kind of pair to look for.
 
 ### New dependencies
 
-With `--base`, assay warns about each dependency between bricks that the
-base didn't have. A new dependency isn't wrong, but it changes the
-architecture, so it deserves a deliberate decision in code review.
+With `--base`, the dependency graph dashes each dependency between bricks
+that the base didn't have. A new dependency isn't wrong, so it isn't a
+violation, but it changes the architecture, so it deserves a deliberate
+decision in code review.
 
 ## Cohesion metrics
 
@@ -270,7 +271,8 @@ Cohesion is the share of a brick's references to workspace code that point
 inside the brick. A low value means the brick mostly calls other bricks.
 That's expected of a base, but a component that is mostly glue may not
 earn its place. Consider moving its logic into the bricks it calls, or
-merging it with the brick it uses most. For a base, read it the other way:
+merging it with the brick it uses most. By default, a component below
+`0.5` gets a warning. For a base, read it the other way:
 high cohesion means the base does work of its own, which usually belongs
 in a component. Averages and outliers compare components only.
 
@@ -393,6 +395,13 @@ failure hides the rest. A large test usually builds a lot of state to
 check one thing, which makes it slow to read and easy to break. Split it
 into tests that each check one behavior, with names that say which, and
 move shared setup into functions.
+
+By default, assay warns about a brick whose mean, of either, is more
+than 2 standard deviations above the mean of the other components. Bases
+have tests too, and compare with the components, since a workspace
+usually has too few bases to compare with each other. What
+counts as a big test differs between workspaces, so the limit comes from
+the workspace's own tests.
 
 ### Untested interface
 

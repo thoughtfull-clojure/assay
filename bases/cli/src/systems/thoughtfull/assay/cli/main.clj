@@ -70,8 +70,8 @@
   "The commits the co-change rule looks at, or nil when it is off or root
   has no Git history to read."
   [root config]
-  (let [{:keys [co-change]} (dependencies/merge-rules
-                              (:dependency-rules config))]
+  (let [{:keys [co-change]} (:dependency-rules
+                             (dependencies/merge-rules config))]
     (when (:level co-change)
       (try
         (git/log-files root (:since co-change))
@@ -91,7 +91,9 @@
      :edges (:edges analysis)
      :libraries (:libraries analysis)
      :violations (into (thresholds/check rules bricks)
-                   (dependencies/check (:dependency-rules config) analysis))
+                   (dependencies/check
+                     (apply merge (vals (dependencies/merge-rules config)))
+                     analysis))
      :thresholds rules}))
 
 (defn- temp-dir
@@ -117,11 +119,7 @@
               (measure dir config nil)
               {:bricks [] :violations []})
             head
-            (git/changed-files root rev)
-            {:changes (:change-thresholds config)
-             :new-dependencies (:new-dependencies
-                                (dependencies/merge-rules
-                                  (:dependency-rules config)))})
+            (git/changed-files root rev))
         (update :comparison assoc :base-ref ref :base-rev rev))
       (finally
         (delete-tree dir)))))
@@ -138,9 +136,7 @@
           head)
       (assoc :workspace (.getName root)
         :generated-at (str (java.time.Instant/now))
-        :change-thresholds (:change-thresholds config)
-        :dependency-rules (dependencies/merge-rules
-                            (:dependency-rules config))))))
+        :rules (dependencies/merge-rules config)))))
 
 (defn- failed?
   "True if report has an error-level violation within scope, \"new\" or

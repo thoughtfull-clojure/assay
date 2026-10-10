@@ -10,7 +10,8 @@
   - {:rule :min :value n} flags a value below n.
   - {:rule :std-devs :value k} flags a brick whose metric is more than k
     standard deviations above the mean of the other bricks of the same type
-    (components are compared with components, bases with bases). It needs
+    (components are compared with components, bases with bases), or of the
+    other bricks of :peer-types, a set of brick types, when given. It needs
     at least :min-peers other bricks (default 3) and is skipped otherwise.
     Brick thresholds only.
 

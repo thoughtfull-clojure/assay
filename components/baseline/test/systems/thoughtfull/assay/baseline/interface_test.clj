@@ -32,28 +32,21 @@
                            (violation "d" :m) (violation "e" :m)]}
         changed #{"components/a/src/a.clj" "components/b/src/b.clj"
                   "components/d/src/d.clj"}
-        result (baseline/compare-reports base head changed
-                 {:changes {:m [{:rule :max-increase :value 10
-                                 :level :warning}]}})
+        result (baseline/compare-reports base head changed)
         by-status (fn [status]
                     (->> (:violations result)
                       (filter #(= status (:status %)))
-                      (map (juxt (comp :name :brick) :base-value :change?))
+                      (map (juxt (comp :name :brick) :base-value))
                       set))]
     (testing "existing violations"
-      (is (= #{["a" 5 nil]} (by-status :existing))))
-    (testing "new violations in changed bricks, and change rules"
-      (is (= #{["b" 5 nil] ["d" nil nil] ["b" 5 true] ["d" nil true]}
-            (by-status :new))))
+      (is (= #{["a" 5]} (by-status :existing))))
+    (testing "new violations in changed bricks"
+      (is (= #{["b" 5] ["d" nil]} (by-status :new))))
     (testing "new violations in unchanged bricks are indirect"
-      (is (= #{["e" nil nil]} (by-status :indirect))))
+      (is (= #{["e" nil]} (by-status :indirect))))
     (testing "resolved violations"
       (is (= ["c"] (map (comp :name :brick)
-                     (get-in result [:comparison :resolved])))))
-    (testing "change messages"
-      (is (= #{"increased by 15 (5 to 20), above the maximum increase of 10"
-               "increased by 30 in a new brick, above the maximum increase of 10"}
-            (set (keep :message (:violations result))))))))
+                     (get-in result [:comparison :resolved])))))))
 
 (deftest historical-test
   (is (= [:existing]
@@ -63,23 +56,8 @@
              {:bricks [(brick "a" {})]
               :violations [(assoc (violation "a" :co-change)
                              :historical? true)]}
-             #{"components/a/src/a.clj"} {}))))
+             #{"components/a/src/a.clj"}))))
     "a violation from history is never new, even in a changed brick"))
-
-(deftest max-increase-percent-test
-  (let [check (fn [base-m head-m]
-                (->> (baseline/compare-reports
-                       {:bricks [(brick "a" {:m base-m})]}
-                       {:bricks [(brick "a" {:m head-m})]}
-                       #{"components/a/src/a.clj"}
-                       {:changes {:m [{:rule :max-increase-percent
-                                       :value 50}]}})
-                  :violations
-                  (map :message)))]
-    (is (= ["increased by 60% (10 to 16), above the maximum increase of 50%"]
-          (check 10 16)))
-    (is (empty? (check 10 15)))
-    (is (empty? (check 0 15)))))
 
 (deftest function-violation-test
   (let [f-violation (fn [subject]
@@ -95,23 +73,43 @@
         head {:bricks [(brick "a" {})]
               :violations [(assoc (f-violation "old") :location {:line 99})
                            (f-violation "new")]}
-        result (baseline/compare-reports base head #{"components/a/src/a.clj"}
-                 {})]
+        result (baseline/compare-reports base head #{"components/a/src/a.clj"})]
     (is (= [["old" :existing 11] ["new" :new nil]]
           (map (juxt :subject :status :base-value) (:violations result)))
       "a function is matched by name, even when its line moves")))
 
-(deftest new-dependencies-test
+(deftest worsened-function-test
+  (let [f-violation (fn [subject value]
+                      {:scope :function
+                       :brick {:name "a" :type :component}
+                       :metric :complexity
+                       :rule {:rule :max :value 10}
+                       :subject subject
+                       :value value
+                       :level :error
+                       :message (str value " is above the maximum of 10")})
+        base {:bricks [{:brick {:name "a"}
+                        :functions [{:name "worse" :complexity 11}
+                                    {:name "same" :complexity 12}
+                                    {:name "better" :complexity 14}]}]
+              :violations [(f-violation "worse" 11) (f-violation "same" 12)
+                           (f-violation "better" 14)]}
+        head {:bricks [(brick "a" {})]
+              :violations [(f-violation "worse" 13) (f-violation "same" 12)
+                           (f-violation "better" 13)]}
+        result (baseline/compare-reports base head #{"components/a/src/a.clj"})]
+    (is (= [["worse" :new "13 is above the maximum of 10 (was 11)"]
+            ["same" :existing "12 is above the maximum of 10"]
+            ["better" :existing "13 is above the maximum of 10"]]
+          (map (juxt :subject :status :message) (:violations result)))
+      "a change that makes a function's violation worse makes it new")))
+
+(deftest new-edges-test
   (let [base {:bricks [] :edges [{:from "a" :to "b"}]}
         head {:bricks [(brick "a" {})]
               :edges [{:from "a" :to "b"}
-                      {:from "a" :to "c-impl" :interface "c"
-                       :location {:file "f.clj" :line 4}}]}
-        changed #{"components/a/src/a.clj"}]
-    (is (= [["a" "c-impl" :warning :new {:file "f.clj" :line 4}
-             "now depends on c-impl (through interface c)"]]
-          (map (juxt (comp :name :brick) :subject :level :status :location
-                 :message)
-            (:violations (baseline/compare-reports base head changed
-                           {:new-dependencies :warning})))))
-    (is (empty? (:violations (baseline/compare-reports base head changed {}))))))
+                      {:from "a" :to "c-impl" :interface "c"}]}
+        result (baseline/compare-reports base head #{"components/a/src/a.clj"})]
+    (is (= [nil true] (map :new? (:edges result)))
+      "an edge base doesn't have is marked new")
+    (is (empty? (:violations result)) "a new edge isn't a violation")))

@@ -3,44 +3,6 @@
    [clojure.string :as str]
    [systems.thoughtfull.assay.metrics.interface :as metrics]))
 
-(defn- fmt
-  [x]
-  (if (== x (Math/rint x))
-    (str (long x))
-    (format "%.1f" (double x))))
-
-(defmulti evaluate-change
-  "Evaluate a change rule against a brick's base value (nil for a new brick)
-  and head value. Returns nil if the rule passes, or a map of :limit and
-  :message."
-  (fn [rule _base _head] (:rule rule)))
-
-(defmethod evaluate-change :max-increase
-  [{limit :value} base head]
-  (let [delta (- head (or base 0))]
-    (when (> delta limit)
-      {:limit limit
-       :message (str "increased by " (fmt delta)
-                  (if base
-                    (str " (" (fmt base) " to " (fmt head) ")")
-                    " in a new brick")
-                  ", above the maximum increase of " (fmt limit))})))
-
-(defmethod evaluate-change :max-increase-percent
-  [{limit :value} base head]
-  (when (and base (pos? base))
-    (let [percent (* 100.0 (/ (- head base) base))]
-      (when (> percent limit)
-        {:limit limit
-         :message (str "increased by " (fmt percent) "% (" (fmt base) " to "
-                    (fmt head) "), above the maximum increase of "
-                    (fmt limit) "%")}))))
-
-(defmethod evaluate-change :default
-  [rule _ _]
-  (throw (ex-info (str "Unknown change rule: " (pr-str (:rule rule)))
-           {:rule rule})))
-
 (defn changed-bricks
   [measurements changed-files]
   (into #{}
@@ -55,11 +17,24 @@
   [{:keys [brick metric rule subject]}]
   [(:name brick) metric rule subject])
 
+(defn- worsened?
+  "True if a function violation's value is further past its limit than the
+  same function's value in base: a change to the function made it worse."
+  [{:keys [scope rule value base-value]}]
+  (and (= :function scope) (number? value) (number? base-value)
+    (case (:rule rule)
+      :max (> value base-value)
+      :min (< value base-value)
+      false)))
+
 (defn- status
-  "A historical violation, from history rather than code, is never new."
+  "A historical violation, from history rather than code, is never new. A
+  function violation that a change made worse is new, even though it was
+  in base."
   [base-keys changed violation]
   (cond
     (:historical? violation) :existing
+    (worsened? violation) :new
     (base-keys (violation-key violation)) :existing
     (changed (:name (:brick violation))) :new
     :else :indirect))
@@ -73,50 +48,33 @@
     :dependency nil
     (get-in base-metrics [(:name brick) metric])))
 
-(defn- change-violations
-  [head base-metrics changed change-thresholds]
-  (for [{:keys [brick metrics]} (:bricks head)
-        :when (changed (:name brick))
-        [metric rules] change-thresholds
-        rule rules
-        :let [base-value (get-in base-metrics [(:name brick) metric])
-              value (get metrics metric)
-              result (when (some? value)
-                       (evaluate-change rule base-value value))]
-        :when result]
-    (merge {:scope :brick
-            :brick brick
-            :metric metric
-            :value value
-            :base-value base-value
-            :rule rule
-            :level (:level rule :error)
-            :status :new
-            :change? true}
-      result)))
+(defn- fmt
+  [x]
+  (if (== x (Math/rint x))
+    (str (long x))
+    (format "%.1f" (double x))))
 
-(defn- new-dependency-violations
-  [base head level]
-  (when level
-    (let [base-edges (set (map (juxt :from :to) (:edges base)))
-          index (into {} (map (juxt (comp :name :brick) :brick)) (:bricks head))]
-      (for [{:keys [from to interface location]} (:edges head)
-            :when (not (base-edges [from to]))]
-        {:scope :dependency
-         :brick (index from)
-         :metric :new-dependency
-         :label "New dependency"
-         :subject to
-         :level level
-         :rule {:rule :new-dependencies}
-         :status :new
-         :location location
-         :message (str "now depends on " to
-                    (when (not= to interface)
-                      (str " (through interface " interface ")")))}))))
+(defn- compared
+  "A head violation with its :base-value and :status, and, when a change
+  made a function worse, what its value was. base is a map of :keys (base
+  violation keys), :metrics, :functions, and :changed (head's changed
+  brick names)."
+  [{:keys [keys metrics functions changed]} violation]
+  (let [v (assoc violation
+            :base-value (base-value metrics functions violation))]
+    (cond-> (assoc v :status (status keys changed v))
+      (and (worsened? v) (:message v))
+      (update :message str " (was " (fmt (:base-value v)) ")"))))
+
+(defn- mark-new-edges
+  "Head's edges, each that base doesn't have marked :new?."
+  [base head]
+  (let [base-edges (set (map (juxt :from :to) (:edges base)))]
+    (mapv #(cond-> % (not (base-edges [(:from %) (:to %)])) (assoc :new? true))
+      (:edges head))))
 
 (defn compare-reports
-  [base head changed-files {:keys [changes new-dependencies]}]
+  [base head changed-files]
   (let [changed (changed-bricks (:bricks head) changed-files)
         base-keys (set (map violation-key (:violations base)))
         head-keys (set (map violation-key (:violations head)))
@@ -127,15 +85,15 @@
                          (for [{:keys [brick functions]} (:bricks base)
                                function functions]
                            [[(:name brick) (metrics/function-id function)] function]))
-        violations (for [v (:violations head)]
-                     (assoc v
-                       :status (status base-keys changed v)
-                       :base-value (base-value base-metrics base-functions v)))]
+        violations (map #(compared {:keys base-keys
+                                    :metrics base-metrics
+                                    :functions base-functions
+                                    :changed changed}
+                           %)
+                     (:violations head))]
     (assoc head
-      :violations (vec (concat violations
-                         (change-violations head base-metrics changed changes)
-                         (new-dependency-violations base head
-                           new-dependencies)))
+      :violations (vec violations)
+      :edges (mark-new-edges base head)
       :comparison {:changed-bricks changed
                    :base-metrics base-metrics
                    :resolved (vec (remove (comp head-keys violation-key)
