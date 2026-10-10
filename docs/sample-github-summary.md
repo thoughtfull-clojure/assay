@@ -94,7 +94,7 @@ graph TD
 
 | Level | Brick | Detail | Location |
 | --- | --- | --- | --- |
-| ⚠️ warning | component github-report | with html-report in 15 of its 16 commits (94%), though neither depends on the other (above the maximum of 0.5) |  |
+| ⚠️ warning | component github-report | with html-report in 16 of its 17 commits (94%), though neither depends on the other (above the maximum of 0.5) |  |
 | ⚠️ warning | component dependencies | with metrics in 7 of its 10 commits (70%), though neither depends on the other (above the maximum of 0.5) |  |
 
 </details>
@@ -105,16 +105,16 @@ graph TD
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | base cli | 961 | 21 | 2.3 | 4.8 | 0 | 0 | 0 | 0 |
 | component baseline | 465 | 11 | 2.2 | 4.6 | 0 | 0 | 0 | 0 |
-| component dependencies | 3696 | 50 | 2.5 | 5.9 | 0 | **6** ⚠️ | **3** ⚠️ | **1** ⚠️ |
+| component dependencies | 3779 | 52 | 2.6 | 5.9 | 0 | **6** ⚠️ | **3** ⚠️ | **1** ⚠️ |
 | component git | 313 | 11 | 1.1 | 3.5 | 0 | 0 | 0 | 0 |
 | component github-report | 2048 | 41 | 2.9 | 5.6 | 0 | **5** ⚠️ | **1** ⚠️ | 0 |
 | component html-report | 3174 | 61 | 2.6 | 6.2 | 0 | **8** ⚠️ | **1** ⚠️ | **1** ⚠️ |
-| component metrics | 4430 | 76 | 2.4 | 5.2 | 0 | **4** ⚠️ | **1** ⚠️ | 0 |
-| component parse | 491 | 15 | 2.5 | 4.0 | 0 | 0 | 0 | 0 |
+| component metrics | 4568 | 81 | 2.3 | 5.2 | 0 | **4** ⚠️ | **1** ⚠️ | 0 |
+| component parse | 635 | 22 | 2.1 | 4.1 | 0 | 0 | 0 | 0 |
 | component text-report | 367 | 10 | 2.0 | 4.7 | 0 | 0 | 0 | 0 |
 | component thresholds | 2255 | 47 | 2.4 | 5.1 | 0 | **5** ⚠️ | **2** ⚠️ | 0 |
 | component workspace | 242 | 8 | 1.4 | 3.8 | 0 | 0 | 0 | 0 |
-| **Average** | 1676.5 | 31.9 | 2.2 | 4.9 | 0 | 2.5 | 0.7 | 0.2 |
+| **Average** | 1709.7 | 33.2 | 2.2 | 4.9 | 0 | 2.5 | 0.7 | 0.2 |
 
 <details><summary>What these metrics mean</summary>
 
@@ -137,14 +137,14 @@ graph TD
 | --- | --- | --- | --- |
 | ⚠️ warning | component html-report | `section-table`: depth 12 > 8 (line 587), forms 283 > 150, params 5 > 4 | `components/html-report/src/systems/thoughtfull/assay/html_report/core.clj:555` |
 | ⚠️ warning | component github-report | `section-table`: depth 12 > 8 (line 373), forms 256 > 150 | `components/github-report/src/systems/thoughtfull/assay/github_report/core.clj:341` |
-| ⚠️ warning | component metrics | `private?`: depth 12 > 8 (line 894) | `components/metrics/src/systems/thoughtfull/assay/metrics/core.clj:883` |
-| ⚠️ warning | component metrics | `interop?`: depth 12 > 8 (line 1009) | `components/metrics/src/systems/thoughtfull/assay/metrics/core.clj:996` |
+| ⚠️ warning | component metrics | `private?`: depth 12 > 8 (line 899) | `components/metrics/src/systems/thoughtfull/assay/metrics/core.clj:888` |
+| ⚠️ warning | component metrics | `interop?`: depth 12 > 8 (line 1053) | `components/metrics/src/systems/thoughtfull/assay/metrics/core.clj:1038` |
 | ⚠️ warning | component dependencies | `analyze`: depth 11 > 8 (line 49) | `components/dependencies/src/systems/thoughtfull/assay/dependencies/errors.clj:30` |
 | ⚠️ warning | component dependencies | `analyze`: depth 11 > 8 (line 40) | `components/dependencies/src/systems/thoughtfull/assay/dependencies/tests.clj:22` |
-| ⚠️ warning | component metrics | `measure-test-source`: depth 11 > 8 (line 1130) | `components/metrics/src/systems/thoughtfull/assay/metrics/core.clj:1112` |
+| ⚠️ warning | component metrics | `measure-test-source`: depth 11 > 8 (line 1174) | `components/metrics/src/systems/thoughtfull/assay/metrics/core.clj:1156` |
 | ⚠️ warning | component thresholds | `std-devs-result`: depth 11 > 8 (line 172), forms 155 > 150 | `components/thresholds/src/systems/thoughtfull/assay/thresholds/core.clj:157` |
-| ⚠️ warning | component dependencies | `analyze`: forms 199 > 150 | `components/dependencies/src/systems/thoughtfull/assay/dependencies/libraries.clj:58` |
-| ⚠️ warning | component metrics | `measure-brick`: depth 10 > 8 (line 1170), forms 192 > 150 | `components/metrics/src/systems/thoughtfull/assay/metrics/core.clj:1149` |
+| ⚠️ warning | component dependencies | `analyze`: forms 202 > 150 | `components/dependencies/src/systems/thoughtfull/assay/dependencies/libraries.clj:82` |
+| ⚠️ warning | component metrics | `measure-brick`: depth 10 > 8 (line 1214), forms 192 > 150 | `components/metrics/src/systems/thoughtfull/assay/metrics/core.clj:1193` |
 | ⚠️ warning | component dependencies | `mermaid`: depth 9 > 8 (line 274), forms 191 > 150 | `components/dependencies/src/systems/thoughtfull/assay/dependencies/core.clj:260` |
 | ⚠️ warning | component dependencies | `duplicates`: depth 10 > 8 (line 89) | `components/dependencies/src/systems/thoughtfull/assay/dependencies/connascence.clj:70` |
 | ⚠️ warning | component dependencies | `analyze`: depth 10 > 8 (line 87), forms 180 > 150 | `components/dependencies/src/systems/thoughtfull/assay/dependencies/core.clj:60` |
@@ -186,12 +186,12 @@ graph TD
 | component git | 0.64 | 0.36 | 1.00 | 0 | 0 | – |
 | component github-report | 0.95 | **0.70** ⚠️ | 0.70 | 0 | **49** ⚠️ | – |
 | component html-report | 0.98 | **0.73** ⚠️ | 0.74 | 0 | **49** ⚠️ | – |
-| component metrics | 0.82 | 0.04 | 0.77 | 0 | 0 | – |
-| component parse | 0.60 | 0.40 | 1.00 | 0 | 0 | **metrics (11%)** ⚠️ |
+| component metrics | 0.82 | 0.03 | 0.76 | 0 | 0 | – |
+| component parse | 0.70 | 0.30 | 1.00 | 0 | 0 | **metrics (14%)** ⚠️ |
 | component text-report | 0.90 | 0.57 | 0.71 | 0 | 0 | – |
 | component thresholds | 0.81 | 0.01 | 0.86 | 0 | 0 | – |
 | component workspace | 0.78 | 0.22 | 1.00 | 0 | 0 | – |
-| **Average** | 0.82 | 0.34 | 0.86 | 0 | 8.9 | 11% |
+| **Average** | 0.83 | 0.33 | 0.86 | 0 | 8.9 | 14% |
 
 <details><summary>What these metrics mean</summary>
 
@@ -227,7 +227,7 @@ graph TD
 
 | Level | Brick | Detail | Location |
 | --- | --- | --- | --- |
-| ⚠️ warning | component parse | is used only by metrics, and has 11% as many forms; consider merging it into metrics (below the minimum of 0.25) |  |
+| ⚠️ warning | component parse | is used only by metrics, and has 14% as many forms; consider merging it into metrics (below the minimum of 0.25) |  |
 
 </details>
 
@@ -256,7 +256,7 @@ Bold: 2 or more standard deviations worse than the mean of the other bricks the 
 | --- | --- |
 | Libraries | Libraries outside the workspace that the brick requires, named by their namespaces, such as `next.jdbc` or `clojure.java.io`. Clojure's own pure namespaces, such as `clojure.string`, don't count. |
 | Spread libraries | Libraries this brick requires that more bricks than the limit require. A library wrapped by one brick can be replaced or upgraded in one place; a library spread across bricks, such as a database driver, means a missing gateway component. Libraries in `:allow` don't count. **Threshold:** warning > 3. |
-| Interop density | Host interop forms per 100 forms, so that large and small bricks compare fairly. A component that wraps a Java API is dense by design; interop scattered through domain logic isn't. **Threshold:** warning > 5. |
+| Interop density | Host interop forms per 100 forms, so that large and small bricks compare fairly: Java or JavaScript method calls, field access, constructors, static members, and `js/` references. A component that wraps a host API is dense by design; interop scattered through domain logic isn't. **Threshold:** warning > 5. |
 | Mutable state | Top-level `atom`, `ref`, `agent`, and `volatile!` definitions, `^:dynamic` vars, and `alter-var-root` calls: state hidden from the functions that depend on it, which makes tests interfere with each other. **Threshold:** warning > 0. |
 
 </details>
@@ -292,8 +292,8 @@ Bold: 2 or more standard deviations worse than the mean of the other bricks the 
 | Metric | Meaning |
 | --- | --- |
 | Error surface | The share of a component's public interface definitions that can throw: their body contains `throw` or `throw+`, or refers to a definition that can, in this brick or another. Each is a failure every caller must be ready for; the fewer, the simpler the interface. Throws in libraries aren't seen. Bases have no interface. |
-| Untyped errors | Throws that give callers nothing to tell failures apart by: a Java exception such as `(Exception. msg)`, or `ex-info` whose data map has no `:type` key (or `:cognitect.anomalies/category`). Rethrows, and data that isn't a literal map, don't count. **Threshold:** warning > 0. |
-| Broad catches | `catch` clauses for `Exception`, `RuntimeException`, `Throwable`, or `Object` that log and carry on, or carry on silently. In a component, a broad catch decides for every caller what a failure means. A catch that rethrows, such as wrapping the failure in an `ex-info` of the component's own, doesn't count: that translates a failure rather than hiding it. **Threshold:** warning > 0. |
+| Untyped errors | Throws that give callers nothing to tell failures apart by: a host exception such as `(Exception. msg)` or `(js/Error. msg)`, or `ex-info` whose data map has no `:type` key (or `:cognitect.anomalies/category`). Rethrows, and data that isn't a literal map, don't count. **Threshold:** warning > 0. |
+| Broad catches | `catch` clauses for `Exception`, `RuntimeException`, `Throwable`, or `Object`, or ClojureScript's `:default`, `js/Error`, or `js/Object`, that log and carry on, or carry on silently. In a component, a broad catch decides for every caller what a failure means. A catch that rethrows, such as wrapping the failure in an `ex-info` of the component's own, doesn't count: that translates a failure rather than hiding it. **Threshold:** warning > 0. |
 
 </details>
 
@@ -311,16 +311,16 @@ Bold: 2 or more standard deviations worse than the mean of the other bricks the 
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | base cli | 8 | 4.0 | 80.6 | – | 0 | 0 | 0.86 |
 | component baseline | 6 | 1.7 | 92.8 | 0.00 | 0 | 0 | 1.32 |
-| component dependencies | 21 | 2.8 | 105.9 | 0.00 | 0 | 0 | 0.83 |
+| component dependencies | 22 | 2.7 | 104.8 | 0.00 | 0 | 0 | 0.83 |
 | component git | 3 | 3.0 | 110.7 | 0.00 | 0 | 0 | 1.37 |
 | component github-report | 17 | 2.6 | 50.8 | 0.00 | 0 | 0 | 0.51 |
 | component html-report | 19 | 3.3 | 51.9 | 0.00 | 0 | 0 | 0.37 |
-| component metrics | 21 | **4.4** ⚠️ | 90.7 | **0.42** | 0 | 0 | 0.44 |
-| component parse | 4 | 2.3 | 50.0 | 0.33 | 0 | 0 | 0.45 |
+| component metrics | 24 | **4.1** ⚠️ | 84.5 | **0.42** | 0 | 0 | 0.46 |
+| component parse | 6 | 2.2 | 56.2 | 0.14 | 0 | 0 | 0.56 |
 | component text-report | 4 | 1.0 | 22.5 | 0.00 | 0 | 0 | 0.59 |
 | component thresholds | 12 | 2.9 | 111.6 | 0.20 | 0 | 0 | 0.64 |
 | component workspace | 2 | 1.5 | 69.5 | 0.00 | 0 | 0 | 0.71 |
-| **Average** | 10.6 | 2.5 | 75.6 | 0.10 | 0 | 0 | 0.74 |
+| **Average** | 11.2 | 2.5 | 75.5 | 0.08 | 0 | 0 | 0.75 |
 
 Bold: 2 or more standard deviations worse than the mean of the other bricks the metric checks. Only ratios, densities, and means are outlined.
 
@@ -342,6 +342,6 @@ Bold: 2 or more standard deviations worse than the mean of the other bricks the 
 
 | Level | Brick | Detail | Location |
 | --- | --- | --- | --- |
-| ⚠️ warning | component metrics | 4.38 is 5.1 standard deviations above the mean of 4 other components (2.92 ± 0.28), over the limit of 2 |  |
+| ⚠️ warning | component metrics | 4.08 is 4.0 standard deviations above the mean of 4 other components (2.9 ± 0.3), over the limit of 2 |  |
 
 </details>

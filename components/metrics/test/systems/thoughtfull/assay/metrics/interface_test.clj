@@ -183,6 +183,40 @@
                        "(defn g [m] (str/join m) (inc m) (Foo/bar m) (a. m))\n"))))
     "a static member of any class counts; str/join, inc, and a. don't"))
 
+(deftest clojurescript-interop-test
+  (is (= 4 (:interop
+            (measure (str "(defn f [el] (.focus el) (set! (.-x el) 1)\n"
+                       "  (js/console.log el) (js/Date.))\n"))))
+    "js/ globals count"))
+
+(deftest reader-conditional-test
+  (let [source (measure (str "(ns n)\n"
+                          "(defn f [x]\n"
+                          "  (try (g #?(:clj :a :cljs :b))\n"
+                          "    (catch #?(:clj Exception :cljs :default) e\n"
+                          "      (throw (#?(:clj Exception. :cljs js/Error.)"
+                          " \"x\")))))\n"
+                          "(defn h [] (throw #?(:clj (ex-info \"x\" {})"
+                          " :cljs (ex-info \"x\" {:type :y}))))\n"))]
+    (is (not-any? #{:clj :cljs} (:keywords source))
+      "a branch's feature isn't a data keyword")
+    (is (= [true] (map :broad? (:catches source)))
+      "a catch is broad if it is broad on any platform")
+    (is (= [:host :untyped] (map :kind (:throws source)))
+      "a throw is as untyped as its least typed branch")
+    (is (not-any? '#{?} (mapcat :references (:definitions source))))))
+
+(deftest clojurescript-error-handling-test
+  (is (= [[":default" true] ["js/Error" true] ["js/Object" true]
+          ["js/TypeError" false]]
+        (map (juxt :class :broad?)
+          (:catches
+           (measure (str "(try (f)\n"
+                      "  (catch :default e nil)\n"
+                      "  (catch js/Error e nil)\n"
+                      "  (catch js/Object e nil)\n"
+                      "  (catch js/TypeError e nil))")))))))
+
 (deftest measure-test-source-test
   (let [t (metrics/measure-test-source "t.clj"
             (str "(ns t (:require [clojure.test :refer [deftest is are]]\n"
@@ -211,7 +245,7 @@
                           "(defn f [] (a))\n"
                           "(defn g [] (throw (ex-info \"x\""
                           " {::anom/category ::anom/fault})))\n"))]
-    (is (= [:typed :untyped :unknown :java :rethrow :typed]
+    (is (= [:typed :untyped :unknown :host :rethrow :typed]
           (map :kind (:throws source))))
     (is (= [["Exception" true] ["clojure.lang.ExceptionInfo" false]]
           (map (juxt :class :broad?) (:catches source))))

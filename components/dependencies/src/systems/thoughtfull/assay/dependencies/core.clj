@@ -189,7 +189,7 @@
 
 (def ^:private untyped-text
   {:untyped "throws ex-info without a :type in its data"
-   :java "throws a Java exception, which callers can tell apart only by class"})
+   :host "throws a host exception, which callers can tell apart only by class"})
 
 (defn- untyped-errors
   "Throws that give callers nothing to tell failures apart by, in every

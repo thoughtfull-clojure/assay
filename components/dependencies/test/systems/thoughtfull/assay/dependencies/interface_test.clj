@@ -232,14 +232,14 @@
   (is (= [["a" {:file "a/core.clj" :line 2}
            "throws ex-info without a :type in its data"]
           ["a" {:file "a/core.clj" :line 3}
-           "throws a Java exception, which callers can tell apart only by class"]]
+           "throws a host exception, which callers can tell apart only by class"]]
         (->> (dependencies/analyze workspace
                [{:brick {:name "a" :type :component}
                  :metrics {}
                  :sources [{:file "a/core.clj" :ns 't.a.core
                             :throws [{:line 1 :kind :typed}
                                      {:line 2 :kind :untyped}
-                                     {:line 3 :kind :java}
+                                     {:line 3 :kind :host}
                                      {:line 4 :kind :rethrow}
                                      {:line 5 :kind :unknown}]}]}])
           (found :untyped-errors)
@@ -426,6 +426,24 @@
                                      {:ns 'java-time.clock :line 4}]}]}]))))
     "a reverse-domain name keeps its organization and library; others
     group by their first segment"))
+
+(deftest clojurescript-library-names-test
+  (is (= ["@mui/material" "cljs.core.async" "react" "react-dom"]
+        (map :library
+          (:libraries
+           (dependencies/analyze workspace
+             [{:brick {:name "a" :type :component}
+               :metrics {}
+               :sources [{:file "a.cljs" :ns 't.a.core
+                          :requires [{:ns "react" :line 1}
+                                     {:ns "react-dom/client" :line 2}
+                                     {:ns "@mui/material/Button" :line 3}
+                                     {:ns 'cljs.core.async :line 4}
+                                     {:ns 'cljs.test :line 5}
+                                     {:ns 'goog.string :line 6}
+                                     {:ns 'goog :line 7}]}]}]))))
+    (str "JavaScript modules are named by their npm package; cljs.test and"
+      " the Closure Library are part of the platform")))
 
 (deftest test-support-test
   (is (empty? (found :boundary-crossings

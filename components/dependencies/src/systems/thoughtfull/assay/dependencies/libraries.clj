@@ -8,8 +8,9 @@
    [systems.thoughtfull.assay.dependencies.names :as names]))
 
 (def ^:private clojure-namespaces
-  "Clojure's own pure namespaces, which every brick may use. I/O namespaces
-  such as clojure.java.io and clojure.java.shell still count."
+  "Clojure's and ClojureScript's own pure namespaces, which every brick may
+  use. I/O namespaces such as clojure.java.io and clojure.java.shell still
+  count."
   (into #{}
     (map symbol)
     ["clojure.core" "clojure.core.protocols" "clojure.core.reducers"
@@ -19,15 +20,24 @@
      "clojure.set" "clojure.spec.alpha" "clojure.spec.gen.alpha"
      "clojure.spec.test.alpha" "clojure.stacktrace" "clojure.string"
      "clojure.template" "clojure.test" "clojure.uuid" "clojure.walk"
-     "clojure.xml" "clojure.zip"]))
+     "clojure.xml" "clojure.zip" "cljs.core" "cljs.math" "cljs.pprint"
+     "cljs.reader" "cljs.repl" "cljs.spec.alpha" "cljs.spec.gen.alpha"
+     "cljs.spec.test.alpha" "cljs.stacktrace" "cljs.test"]))
+
+(defn- platform?
+  "True if ns is part of the host platform, as Java classes are: the
+  Google Closure Library, goog, which ClojureScript ships with."
+  [ns]
+  (let [ns (str ns)]
+    (or (= "goog" ns) (str/starts-with? ns "goog."))))
 
 (def ^:private prefix-segments
   "How many segments name a library under a shared prefix: clojure.java.io
   and clojure.tools.cli are libraries, as are babashka.fs and
-  cognitect.aws. Otherwise the first segment names it, as rewrite-clj does
-  for rewrite-clj.node and rewrite-clj.parser, unless it is a top-level
-  domain (see domains)."
-  {"clojure" 3 "babashka" 2 "cognitect" 2})
+  cognitect.aws, and cljs.core.async. Otherwise the first segment names
+  it, as rewrite-clj does for rewrite-clj.node and rewrite-clj.parser,
+  unless it is a top-level domain (see domains)."
+  {"clojure" 3 "cljs" 3 "babashka" 2 "cognitect" 2})
 
 (def ^:private domains
   "Top-level domains that begin reverse-domain namespaces, such as
@@ -37,19 +47,33 @@
     "info" "biz" "xyz" "us" "uk" "de" "fr" "nl" "se" "no" "fi" "dk" "ch"
     "at" "be" "eu" "es" "it" "pl" "cz" "ca" "au" "nz" "jp" "br" "in"})
 
+(defn- package
+  "The npm package of a JavaScript module path: react for react and
+  react-dom for react-dom/client, or @mui/material for
+  @mui/material/Button."
+  [module]
+  (let [parts (str/split module #"/")]
+    (str/join "/" (take (if (str/starts-with? module "@") 2 1) parts))))
+
 (defn- library-key
   [ns]
-  (let [segments (str/split (str ns) #"\.")
-        first-segment (first segments)]
-    (str/join "." (take (or (prefix-segments first-segment)
-                          (if (domains first-segment) 3 1))
-                    segments))))
+  (if (string? ns)
+    (package ns)
+    (let [segments (str/split (str ns) #"\.")
+          first-segment (first segments)]
+      (str/join "." (take (or (prefix-segments first-segment)
+                            (if (domains first-segment) 3 1))
+                      segments)))))
 
 (defn- common-prefix
   "The longest run of namespace segments that every namespace starts with,
-  so next.jdbc and next.jdbc.sql are next.jdbc."
+  so next.jdbc and next.jdbc.sql are next.jdbc. JavaScript modules are
+  named by their npm package."
   [namespaces]
-  (let [split (map #(str/split (str %) #"\.") namespaces)]
+  (let [split (map #(if (string? %)
+                      [(package %)]
+                      (str/split (str %) #"\."))
+                namespaces)]
     (->> (apply map vector split)
       (take-while #(apply = %))
       (map first)
@@ -66,7 +90,8 @@
                        {:keys [ns line]} requires
                        :when (not (or (names/segment top-ns ns)
                                     (= (str ns) (str top-ns))
-                                    (clojure-namespaces ns)))]
+                                    (clojure-namespaces ns)
+                                    (platform? ns)))]
                    {:brick (:name brick) :file file :line line :ns ns})
         libraries (for [[_ rs] (group-by (comp library-key :ns) requires)
                         :let [firsts (vals (reduce (fn [acc r]

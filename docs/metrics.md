@@ -337,16 +337,17 @@ library. Add those to the `:allow` setting of `:library-spread`, such as
 
 ### Interop density
 
-Java interop couples code to the host: method calls, field access,
-constructors, and static members such as `System/getenv`. A component
-that wraps a Java API is dense with interop by design. Interop spread
-through domain logic is harder to test, harder to read as Clojure, and
-harder to port to another host, such as ClojureScript.
+Host interop couples code to the host: method calls, field access,
+constructors, static members such as `System/getenv`, and in
+ClojureScript, JavaScript objects such as `js/document`. A component that
+wraps a Java or JavaScript API is dense with interop by design. Interop
+spread through domain logic is harder to test, harder to read as Clojure,
+and harder to port to another host.
 
 Interop density, interop forms per 100 forms, compares bricks of
 different sizes. By default, assay warns about a component above 5. A
 component that stands out is worth a look: move its interop behind a
-small set of functions, or into a component whose job is the Java API, so
+small set of functions, or into a component whose job is the host API, so
 the rest works with Clojure data. A component that wraps a Java API, or a
 user interface over JavaScript, can take a higher threshold.
 
@@ -384,8 +385,9 @@ catching, so a definition that catches everything it calls still counts.
 
 ### Untyped errors
 
-Callers tell failures apart by what an error carries. A Java exception
-such as `(IllegalStateException. msg)` carries a message and a class; an
+Callers tell failures apart by what an error carries. A host exception
+such as `(IllegalStateException. msg)` or `(js/Error. msg)` carries a
+message and a class; an
 `ex-info` without a `:type` key carries data, but nothing a caller can
 dispatch on without knowing its shape. Both leave callers parsing
 messages or guessing.
@@ -400,7 +402,8 @@ names.
 Catching belongs where code can handle the failure, which is usually at
 the edges: a base that turns errors into exit codes or HTTP responses. A
 component that catches `Exception`, `RuntimeException`, `Throwable`, or
-`Object` and carries on decides for every caller what any failure means,
+`Object`, or in ClojureScript `:default`, `js/Error`, or `js/Object`, and
+carries on decides for every caller what any failure means,
 including ones it didn't expect, such as a bug. Assay warns about broad
 catches in components, and says whether each logs the failure or drops
 it silently.

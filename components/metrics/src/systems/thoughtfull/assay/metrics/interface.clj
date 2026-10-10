@@ -8,7 +8,7 @@
   Returns a map of :file, :ns and :requires (from its ns form, if any),
   :forms, :top-level-forms, :functions (each also has :ns), :definitions,
   :keywords, :fragments, :mutable-state, :throws, :catches, and :interop
-  (a count of Java interop forms).
+  (a count of host interop forms).
 
   Each definition (def, defn, defmulti, and so on) is a map of :name (a
   symbol), :line, :references, the set of symbols in its body, and
@@ -18,7 +18,7 @@
   :mutable-state entry is a top-level atom, ref, agent, volatile, or
   dynamic var, or an alter-var-root call, as a map of :name, :line, and
   :kind. Each throw is a map of :line and :kind (:typed, :untyped, or
-  :unknown ex-info, a :java exception, or a :rethrow), and each catch
+  :unknown ex-info, a :host exception, or a :rethrow), and each catch
   clause a map of :line, :class, and :broad?."
   [file source]
   (core/measure-source file source))

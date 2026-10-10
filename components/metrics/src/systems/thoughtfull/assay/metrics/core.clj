@@ -216,7 +216,7 @@
    {:key :untyped-errors
     :section :errors
     :label "Untyped errors"
-    :description (str "Throws of Java exceptions, or of ex-info without a"
+    :description (str "Throws of host exceptions, or of ex-info without a"
                    " :type key.")
     :kind :count
     :checks #{:component}
@@ -224,7 +224,8 @@
    {:key :broad-catches
     :section :errors
     :label "Broad catches"
-    :description "catch clauses for Exception, Throwable, and the like."
+    :description (str "catch clauses for Exception, Throwable, :default,"
+                   " and the like.")
     :kind :count
     :checks #{:component}
     :default {:warning 0}}
@@ -393,8 +394,10 @@
      " own pure namespaces, such as `clojure.string`, don't count.")
    :interop-density
    (str "Host interop forms per 100 forms, so that large and small bricks"
-     " compare fairly. A component that wraps a Java API is dense by"
-     " design; interop scattered through domain logic isn't.")
+     " compare fairly: Java or JavaScript method calls, field access,"
+     " constructors, static members, and `js/` references. A component that"
+     " wraps a host API is dense by design; interop scattered through"
+     " domain logic isn't.")
    :mutable-state
    (str "Top-level `atom`, `ref`, `agent`, and `volatile!` definitions,"
      " `^:dynamic` vars, and `alter-var-root` calls: state hidden from the"
@@ -407,13 +410,15 @@
      " every caller must be ready for; the fewer, the simpler the"
      " interface. Throws in libraries aren't seen. Bases have no interface.")
    :untyped-errors
-   (str "Throws that give callers nothing to tell failures apart by: a Java"
-     " exception such as `(Exception. msg)`, or `ex-info` whose data map"
+   (str "Throws that give callers nothing to tell failures apart by: a host"
+     " exception such as `(Exception. msg)` or `(js/Error. msg)`, or"
+     " `ex-info` whose data map"
      " has no `:type` key (or `:cognitect.anomalies/category`). Rethrows,"
      " and data that isn't a literal map, don't count.")
    :broad-catches
    (str "`catch` clauses for `Exception`, `RuntimeException`, `Throwable`,"
-     " or `Object` that log and carry on, or carry on silently. In a"
+     " or `Object`, or ClojureScript's `:default`, `js/Error`, or"
+     " `js/Object`, that log and carry on, or carry on silently. In a"
      " component, a broad catch decides for every caller what a failure"
      " means. A catch that rethrows, such as wrapping the failure in an"
      " `ex-info` of the component's own, doesn't count: that translates a"
@@ -816,7 +821,7 @@
   #{:as :refer :refer-clojure :require :use :import :exclude :rename :only
     :all :keys :strs :syms :or :let :when :while :else :default :pre :post
     :private :dynamic :const :doc :arglists :tag :added :deprecated
-    :gen-class :load :reload :verbose :as-alias})
+    :gen-class :load :reload :verbose :as-alias :export})
 
 (defn- reader-opts
   "rewrite-clj sexpr options that resolve auto-resolved keywords as the
@@ -828,7 +833,7 @@
                   (for [{:keys [as as-alias] :as r} requires
                         alias [as as-alias]
                         :when alias]
-                    [alias (:ns r)]))]
+                    [alias (symbol (str (:ns r)))]))]
     {:auto-resolve #(if (= :current %) (or ns 'user) (aliases % %))}))
 
 (defn- keywords
@@ -914,9 +919,19 @@
 ;; Error handling
 
 (def ^:private broad-exceptions
+  "Catch-all classes, and ClojureScript's :default, js/Error, and
+  js/Object."
   #{"Exception" "java.lang.Exception" "RuntimeException"
     "java.lang.RuntimeException" "Throwable" "java.lang.Throwable"
-    "Object" "java.lang.Object"})
+    "Object" "java.lang.Object" ":default" "js/Error" "js/Object"})
+
+(defn- alternatives
+  "The branch values of a reader conditional, or node itself: what a form
+  in a .cljc file can be on each platform."
+  [node]
+  (if (some-> node parse/reader-conditional-node?)
+    (parse/code-children node)
+    [node]))
 
 (defn- typed-data?
   "True if an ex-info data map has a :type key, in any namespace, or a
@@ -927,14 +942,25 @@
              (or (= "type" (name k)) (= :cognitect.anomalies/category k))))
     (take-nth 2 (parse/code-children map-node))))
 
-(defn- thrown-kind
-  "What a throw form throws: :typed or :untyped ex-info (by its literal data
-  map), or a literal map, as slingshot's throw+ can; :unknown ex-info data;
-  a :java exception constructed in place; or a :rethrow of something
-  else."
-  [throw-node opts]
-  (let [arg (second (parse/code-children throw-node))
-        head (some-> arg parse/head-symbol)]
+(defn- constructor-symbol?
+  "True if node is new or a Foo. symbol."
+  [node]
+  (let [v (some-> node token-value)]
+    (and (symbol? v)
+      (or (= "new" (name v)) (str/ends-with? (name v) ".")))))
+
+(defn- constructor?
+  "True if a list's head constructs a host object: new, or Foo., in any of
+  a reader conditional's branches."
+  [arg]
+  (and (= :list (some-> arg n/tag))
+    (boolean (some constructor-symbol?
+               (alternatives (first (parse/code-children arg)))))))
+
+(defn- arg-kind
+  "What throwing arg throws, as thrown-kind describes."
+  [arg opts]
+  (let [head (some-> arg parse/head-symbol)]
     (cond
       (= :map (some-> arg n/tag))
       (if (typed-data? arg opts) :typed :untyped)
@@ -946,8 +972,19 @@
           (typed-data? data opts) :typed
           :else :untyped))
 
-      (or (= "new" head) (some-> head (str/ends-with? "."))) :java
+      (constructor? arg) :host
       :else :rethrow)))
+
+(defn- thrown-kind
+  "What a throw form throws: :typed or :untyped ex-info (by its literal data
+  map), or a literal map, as slingshot's throw+ can; :unknown ex-info data;
+  a :host exception (Java or JavaScript) constructed in place; or a
+  :rethrow of something else. When a reader conditional chooses what to
+  throw, the least typed of its branches: :host, then :untyped."
+  [throw-node opts]
+  (let [kinds (map #(arg-kind % opts)
+                (alternatives (second (parse/code-children throw-node))))]
+    (or (some (set kinds) [:host :untyped]) (first kinds))))
 
 (def ^:private log-heads
   "Calls that log, by name in any namespace."
@@ -967,6 +1004,12 @@
       (some log-heads heads) :logs
       :else :continues)))
 
+(defn- broad?
+  "True if a catch clause's class node is a catch-all, on any platform."
+  [class-node]
+  (boolean (some #(contains? broad-exceptions (some-> % n/string))
+             (alternatives class-node))))
+
 (defn- error-handling
   "Every throw (and slingshot throw+), as {:line :kind}, and every catch
   clause, as {:line :class :broad? :handling}, in top-level forms. opts,
@@ -978,11 +1021,10 @@
                     {:line (:row (meta node)) :kind (thrown-kind node opts)}))
      :catches (vec (for [node nodes
                          :when (= "catch" (parse/head-symbol node))
-                         :let [class (some-> (second (parse/code-children node))
-                                       n/string)]]
+                         :let [class-node (second (parse/code-children node))]]
                      {:line (:row (meta node))
-                      :class class
-                      :broad? (contains? broad-exceptions class)
+                      :class (some-> class-node n/string)
+                      :broad? (broad? class-node)
                       :handling (handling node)}))}))
 
 ;; Host interop
@@ -994,14 +1036,16 @@
   (boolean (some-> s (str/split #"\.") last first Character/isUpperCase)))
 
 (defn- interop?
-  "True if node is a symbol for Java interop: a method or field (.foo,
-  .-foo, ..), a constructor (Foo.), new, or a static member (Math/abs)."
+  "True if node is a symbol for host interop: a method or field (.foo,
+  .-foo, ..), a constructor (Foo.), new, a static member (Math/abs), or a
+  JavaScript global (js/document)."
   [node]
   (let [sym (token-value node)]
     (and (symbol? sym)
       (let [nm (name sym)
             ns (namespace sym)]
         (or (class-name? ns)
+          (= "js" ns)
           (and (nil? ns)
             (or (= "new" nm)
               (and (str/starts-with? nm ".") (< 1 (count nm)))
@@ -1163,7 +1207,7 @@
                  :mean-function-complexity (mean (map :complexity functions))
                  :mean-function-depth (mean (map :depth functions))
                  :mutable-state (count (mapcat :mutable-state files))
-                 :untyped-errors (count (filter (comp #{:untyped :java} :kind)
+                 :untyped-errors (count (filter (comp #{:untyped :host} :kind)
                                           (mapcat :throws files)))
                  :broad-catches (count (filter #(and (:broad? %)
                                                   (not= :rethrows

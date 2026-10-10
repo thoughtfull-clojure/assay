@@ -20,6 +20,15 @@
     (is (nil? (head "[a b]")))
     (is (nil? (head "(:k m)")))))
 
+(deftest reader-conditional-test
+  (let [node (first (parse/top-level-forms
+                      (parse/parse-string "#?(:clj a #_x :cljs [b])")))]
+    (is (parse/reader-conditional-node? node))
+    (is (= ["a" "[b]"] (map n/string (parse/code-children node)))
+      "a reader conditional's children are its branch values"))
+  (is (not (parse/reader-conditional-node?
+             (first (parse/top-level-forms (parse/parse-string "#js {}")))))))
+
 (deftest position-test
   (is (= {:row 3 :col 1}
         (-> (parse/parse-string "\n\n(defn f [] 1)")
@@ -54,3 +63,27 @@
                                     "(ns ^:no-doc ^{:x 1} a.b)"))))
     "metadata on the namespace name")
   (is (nil? (parse/ns-info (parse/parse-string "(defn f [] 1)")))))
+
+(deftest clojurescript-ns-info-test
+  (is (= [{:ns "react" :line 3 :as 'react}
+          {:ns "react-dom/client" :line 4 :refer ['createRoot]}
+          {:ns 'c.d :line 5 :as 'd}
+          {:ns 'goog.string :line 6}
+          {:ns 'e.f :line 7}
+          {:ns 'e.g :line 7}
+          {:ns 'h.i :line 8 :refer ['m 'n]}
+          {:ns 'j.k :line 9}]
+        (:requires
+         (parse/ns-info
+           (parse/parse-string
+             (str "(ns a.b\n"
+               "  (:require\n"
+               "   [\"react\" :as react]\n"
+               "   [\"react-dom/client\" :refer [createRoot]]\n"
+               "   #?(:clj [c.d :as d]\n"
+               "      :cljs [goog.string])\n"
+               "   #?@(:cljs [e.f [e.g]]))\n"
+               "  (:require-macros [h.i :refer [m] :refer-macros [n]])\n"
+               "  #?(:cljs (:use-macros [j.k])))")))))
+    (str "string requires, :require-macros and :use-macros, :refer-macros,"
+      " and reader conditionals, for every platform")))

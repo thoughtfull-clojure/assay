@@ -18,6 +18,10 @@ matter and what to do about them, see [Using assay's metrics](docs/metrics.md).
 
 Assay measures each component and base from the Clojure files under its
 `src` directory, and its tests from the files under its `test` directory.
+Clojure files are `.clj`, `.cljs`, and `.cljc` files, so ClojureScript
+components count too. A reader conditional counts every platform's
+branches: `#?(:clj a :cljs b)` is one form with children `a` and `b`, and
+the requires in each branch are dependencies.
 The metrics fall into six categories. Each is a section of the report and
 a key of the [configuration](#configuration), and the tables below list
 each metric's default thresholds. A metric with no default is context: it
@@ -124,7 +128,7 @@ out of bases.
 | --- | --- | --- |
 | Libraries | Libraries outside the workspace that the brick requires | |
 | Spread libraries | Of those, libraries that more bricks than the threshold require | warning > 3 |
-| Interop density | Java interop forms per 100 forms: method calls, field access, constructors, and static members | warning > 5 (components) |
+| Interop density | Host interop forms per 100 forms: method calls, field access, constructors, static members, and `js/` references | warning > 5 (components) |
 | Mutable state | Top-level atoms, refs, agents, volatiles, dynamic vars, and `alter-var-root` calls | warning > 0 (components) |
 
 Assay names a library by its namespaces: `next.jdbc` and `next.jdbc.sql`
@@ -133,9 +137,14 @@ are `next.jdbc`, and `rewrite-clj.node` and `rewrite-clj.parser` are
 so `systems.thoughtfull.amalgam` and `systems.thoughtfull.desiderata` are
 two libraries. Clojure's own pure namespaces, such as `clojure.string` and
 `clojure.set`, don't count; its I/O namespaces, `clojure.java.io` and
-`clojure.java.shell`, do. Libraries in the `:allow` setting of
-`:library-spread`, such as a logging library, don't count toward it. The
-shared libraries table marks each library past the threshold.
+`clojure.java.shell`, do. ClojureScript's own namespaces, such as
+`cljs.test`, don't count, and neither does the Google Closure Library
+(`goog`), which is part of the platform the way Java classes are. Assay
+names a JavaScript module by its npm package: `"react-dom/client"` is
+`react-dom`, and `"@mui/material/Button"` is `@mui/material`. Libraries
+in the `:allow` setting of `:library-spread`, such as a logging library,
+don't count toward it. The shared libraries table marks each library past
+the threshold.
 
 Bases are the imperative shell, so interop density and mutable state check
 components only. A base shows its value uncolored.
@@ -145,8 +154,8 @@ components only. A base shows its value uncolored.
 | Metric | Meaning | Default |
 | --- | --- | --- |
 | Error surface | Share of the public interface definitions that can throw, even indirectly | |
-| Untyped errors | Throws of Java exceptions, or of `ex-info` without a `:type` key | warning > 0 (components) |
-| Broad catches | `catch` clauses for `Exception`, `RuntimeException`, `Throwable`, or `Object` that don't rethrow | warning > 0 (components) |
+| Untyped errors | Throws of host exceptions, such as `(Exception. msg)` or `(js/Error. msg)`, or of `ex-info` without a `:type` key | warning > 0 (components) |
+| Broad catches | `catch` clauses for `Exception`, `RuntimeException`, `Throwable`, or `Object`, or ClojureScript's `:default`, `js/Error`, or `js/Object`, that don't rethrow | warning > 0 (components) |
 
 A definition can throw when its body contains `throw` or slingshot's
 `throw+`, or when it refers to a definition that can, whichever brick

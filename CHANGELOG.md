@@ -15,8 +15,20 @@ and assay follows [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.htm
 - Slingshot's `throw+` counts as a throw, typed by its map's `:type`.
 - Cell tooltips explain values, such as how many interface definitions
   can throw, and which side of the main sequence a component is on.
+- ClojureScript support. Requires of JavaScript modules, such as
+  `["react" :as react]`, count as libraries named by their npm package;
+  `:require-macros` and `:use-macros` count as requires; and requires in
+  reader conditionals count for every platform. `js/` references count as
+  interop, `(js/Error. msg)` as an untyped error, and
+  `(catch :default e)`, `js/Error`, and `js/Object` as broad catches.
+  ClojureScript's own namespaces and the Google Closure Library don't
+  count as libraries.
 
 ### Changed
+
+- A reader conditional is one form whose children are its branch values,
+  for every platform, so its features no longer count as forms, nesting,
+  or shared keywords.
 
 - **Breaking:** the configuration follows the report's layout. Its keys
   are the report's categories (`:dependencies`, `:complexity`,
