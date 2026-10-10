@@ -5,8 +5,64 @@
    [rewrite-clj.node :as n]
    [systems.thoughtfull.assay.parse.interface :as parse]))
 
+;; The metric registry. Each metric belongs to a report section (a
+;; category of the config) and knows how it is checked:
+;;
+;; - :kind is how a threshold applies. :brick (the default) compares the
+;;   brick's value. :function compares each function's :function-key value,
+;;   and :finding each finding's :value (a dependency edge, a library, a
+;;   duplicate, and so on); the brick's value is then how many are past the
+;;   limit. :count compares the brick's count of findings that have no
+;;   value of their own, such as catch clauses.
+;; - :direction is :max (the default), flagging values above the limit, or
+;;   :min, flagging values below it.
+;; - :types are the brick types the metric describes (default components
+;;   and bases), and :checks the types its thresholds check (default
+;;   :types). A base outside :checks still shows its value.
+;; - :default is its default thresholds, a map of :warning and :error, and
+;;   :options the defaults of its other settings.
+
 (def metrics
-  [{:key :files
+  [{:key :afferent
+    :section :dependencies
+    :label "Afferent (Ca)"
+    :description "Bricks that depend on this brick's interface."
+    :types #{:component}}
+   {:key :efferent
+    :section :dependencies
+    :label "Efferent (Ce)"
+    :description "Interfaces this brick depends on."}
+   {:key :instability
+    :section :dependencies
+    :label "Instability"
+    :description "Ce / (Ca + Ce): 0 is stable, 1 is unstable."
+    :format :decimal
+    :types #{:component}}
+   {:key :unstable-dependencies
+    :section :dependencies
+    :label "Unstable dependencies"
+    :description (str "Dependencies on a brick whose instability is higher"
+                   " than this brick's by more than the limit.")
+    :kind :finding
+    :default {:error 0.1}}
+   {:key :positional-interface
+    :section :dependencies
+    :label "Positional interface"
+    :description (str "Interface functions that other bricks call, with more"
+                   " positional parameters than the limit.")
+    :kind :finding
+    :types #{:component}
+    :default {:warning 4}}
+   {:key :co-change
+    :section :dependencies
+    :label "Co-change"
+    :description (str "Bricks with no dependency between them that changed"
+                   " together in more of this brick's commits than the"
+                   " limit.")
+    :kind :finding
+    :default {:warning 0.5}
+    :options {:since "12 months" :min-shared 5 :max-bricks-per-commit 5}}
+   {:key :files
     :section :complexity
     :label "Files"
     :description "Clojure source files under src."}
@@ -30,38 +86,78 @@
     :description "Mean nesting depth of the brick's functions."
     :format :decimal
     :precision 1}
-   {:key :afferent
-    :section :dependencies
-    :label "Afferent (Ca)"
-    :description "Bricks that depend on this brick's interface."
-    :components-only true}
-   {:key :efferent
-    :section :dependencies
-    :label "Efferent (Ce)"
-    :description "Interfaces this brick depends on."}
-   {:key :instability
-    :section :dependencies
-    :label "Instability"
-    :description "Ce / (Ca + Ce): 0 is stable, 1 is unstable."
-    :format :decimal
-    :components-only true}
+   {:key :function-complexity
+    :section :complexity
+    :label "Complex functions"
+    :description "Functions with cyclomatic complexity above the limit."
+    :kind :function
+    :function-key :complexity
+    :default {:error 10}}
+   {:key :function-depth
+    :section :complexity
+    :label "Deep functions"
+    :description "Functions nested deeper than the limit."
+    :kind :function
+    :function-key :depth
+    :line-key :depth-line
+    :default {:warning 8}}
+   {:key :function-forms
+    :section :complexity
+    :label "Long functions"
+    :description "Functions of more forms than the limit."
+    :kind :function
+    :function-key :forms
+    :default {:warning 150}}
+   {:key :function-params
+    :section :complexity
+    :label "Many-parameter functions"
+    :description "Functions with more positional parameters than the limit."
+    :kind :function
+    :function-key :params
+    :default {:warning 4}}
    {:key :abstractness
     :section :modularity
     :label "Abstractness"
     :description (str "1 - interface definitions / all definitions: how"
                    " much the interface hides. Bases have none.")
     :format :decimal
-    :components-only true}
+    :types #{:component}}
+   {:key :main-sequence-distance
+    :section :modularity
+    :label "Main-sequence distance"
+    :description (str "|abstractness + instability - 1|: how far a"
+                   " component is from balancing the two.")
+    :format :decimal
+    :types #{:component}
+    :default {:warning 0.7}}
    {:key :cohesion
     :section :modularity
     :label "Cohesion"
     :description "Own-namespace references / all workspace references."
     :format :decimal
-    :components-only true}
+    :direction :min
+    :checks #{:component}
+    :default {:warning 0.5}}
    {:key :shared-keywords
     :section :modularity
     :label "Shared keywords"
     :description "Keywords this brick uses that other bricks also use."}
+   {:key :duplicate-code
+    :section :modularity
+    :label "Duplicate code"
+    :description (str "Code of more forms than the limit that another"
+                   " brick also has.")
+    :kind :finding
+    :default {:warning 30}}
+   {:key :merge-candidate
+    :section :modularity
+    :label "Merge into"
+    :description (str "A component with a single dependent, itself a"
+                   " component, and less than the limit of its size.")
+    :kind :finding
+    :direction :min
+    :types #{:component}
+    :default {:warning 0.25}}
    {:key :libraries
     :section :io
     :label "Libraries"
@@ -70,6 +166,14 @@
     :section :io
     :label "Shared libraries"
     :description "Of those, libraries that another brick also requires."}
+   {:key :library-spread
+    :section :io
+    :label "Spread libraries"
+    :description (str "Of those, libraries that more bricks than the limit"
+                   " require.")
+    :kind :finding
+    :default {:warning 3}
+    :options {:allow #{}}}
    {:key :interop
     :section :io
     :label "Host interop"
@@ -80,22 +184,30 @@
     :label "Interop density"
     :description "Host interop forms per 100 forms."
     :format :decimal
-    :precision 1}
+    :precision 1
+    :checks #{:component}
+    :default {:warning 5}}
    {:key :mutable-state
     :section :io
     :label "Mutable state"
     :description (str "Top-level atoms, refs, agents, volatiles, dynamic"
-                   " vars, and alter-var-root calls.")}
+                   " vars, and alter-var-root calls.")
+    :kind :count
+    :checks #{:component}
+    :default {:warning 0}}
    {:key :error-surface
     :section :errors
     :label "Error surface"
     :description "Interface definitions that can throw, directly or not."
-    :components-only true}
+    :types #{:component}}
    {:key :untyped-errors
     :section :errors
     :label "Untyped errors"
     :description (str "Throws of Java exceptions, or of ex-info without a"
-                   " :type key.")}
+                   " :type key.")
+    :kind :count
+    :checks #{:component}
+    :default {:warning 0}}
    {:key :catches
     :section :errors
     :label "Catches"
@@ -103,7 +215,10 @@
    {:key :broad-catches
     :section :errors
     :label "Broad catches"
-    :description "catch clauses for Exception, Throwable, and the like."}
+    :description "catch clauses for Exception, Throwable, and the like."
+    :kind :count
+    :checks #{:component}
+    :default {:warning 0}}
    {:key :tests
     :section :tests
     :label "Tests"
@@ -113,18 +228,29 @@
     :label "Assertions per test"
     :description "Mean is and are assertions per deftest."
     :format :decimal
-    :precision 1}
+    :precision 1
+    :checks #{:component}
+    :default {:warning {:std-devs 2}}}
    {:key :forms-per-test
     :section :tests
     :label "Forms per test"
     :description "Mean forms per deftest."
     :format :decimal
-    :precision 1}
+    :precision 1
+    :checks #{:component}
+    :default {:warning {:std-devs 2}}}
    {:key :untested-interface
     :section :tests
     :label "Untested interface"
     :description "Interface definitions no test in the workspace mentions."
-    :components-only true}
+    :types #{:component}}
+   {:key :boundary-crossings
+    :section :tests
+    :label "Boundary crossings"
+    :description (str "Requires, in tests, of another brick's namespaces"
+                   " other than its interface.")
+    :kind :count
+    :default {:warning 0}}
    {:key :isolation-hazards
     :section :tests
     :label "Isolation hazards"
@@ -163,6 +289,61 @@
    (str "`Ce / (Ca + Ce)`, from `0` (stable: others depend on it and it"
      " depends on little) to `1` (unstable: free to change, since nothing"
      " depends on it). Bricks should depend only on more stable bricks.")
+   :unstable-dependencies
+   (str "Dependencies on a brick less stable than this one: its instability"
+     " is higher than this brick's by more than the limit. Bricks should"
+     " depend only on more stable bricks, so that what changes often"
+     " doesn't ripple into what is meant to change rarely. A small gap is"
+     " noise, so only a gap past the limit counts.")
+   :positional-interface
+   (str "Interface functions that other bricks call with more positional"
+     " parameters than the limit: connascence of position. Every caller"
+     " depends on the order of the arguments; a map of named options"
+     " doesn't.")
+   :co-change
+   (str "Bricks that keep changing in the same commits but don't depend on"
+     " each other: coupling the source doesn't show. Counted over the Git"
+     " history of `:since`, in pairs that share at least `:min-shared`"
+     " commits, leaving out commits that touch more than"
+     " `:max-bricks-per-commit` bricks. The value is the share of this"
+     " brick's commits that also change the other.")
+   :function-complexity
+   (str "Functions whose cyclomatic complexity is above the limit:"
+     " `1` plus a decision point for each `if`, `when`, `cond` clause,"
+     " `and` and `or` argument, `catch`, and the like.")
+   :function-depth
+   (str "Functions nested deeper than the limit. Each collection inside"
+     " another adds a level; a binding form's bindings start again at 1.")
+   :function-forms
+   "Functions of more forms than the limit, counting every form in them."
+   :function-params
+   (str "Functions with more positional parameters than the limit, in"
+     " their longest arity, not counting `&` rest parameters.")
+   :main-sequence-distance
+   (str "`|abstractness + instability - 1|`. A stable component (low"
+     " instability) should be abstract, hiding its implementation behind a"
+     " small interface, and an unstable one needn't be. Near `0` is"
+     " balanced. Near `1` is either stable and concrete, hard to change"
+     " though much depends on it, or abstract and unstable, an interface"
+     " little uses.")
+   :duplicate-code
+   (str "Code of more forms than the limit that appears in another brick"
+     " too, compared after formatting and comments: connascence of"
+     " algorithm. A fix to one copy has to be made to the other.")
+   :merge-candidate
+   (str "A component used by a single component, and smaller than the"
+     " limit as a share of that component's forms. A component that"
+     " small, with one user, may belong inside it.")
+   :library-spread
+   (str "Libraries this brick requires that more bricks than the limit"
+     " require. A library wrapped by one brick can be replaced or upgraded"
+     " in one place; a library spread across bricks, such as a database"
+     " driver, means a missing gateway component. Libraries in `:allow`"
+     " don't count.")
+   :boundary-crossings
+   (str "Requires, in this brick's tests, of another brick's namespaces"
+     " other than its interface. Tests that reach into an implementation"
+     " break when it changes, though its interface didn't.")
    :abstractness
    (str "`1 - interface definitions / all definitions`, counting `def`,"
      " `defn`, `defmethod`, and the like. A small interface over a large"
@@ -242,8 +423,24 @@
      " brick has; compare it with other bricks rather than aim for a"
      " number.")})
 
+(def ^:private all-types
+  #{:component :base})
+
+(def ^:private registry
+  "The metrics with their defaults filled in."
+  (mapv (fn [{:keys [types] :as metric}]
+          (let [types (or types all-types)]
+            (merge {:kind :brick :direction :max :checks types}
+              metric
+              {:types types})))
+    metrics))
+
 (def ^:private metric-index
-  (into {} (map (juxt :key identity)) metrics))
+  (into {} (map (juxt :key identity)) registry))
+
+(defn metric
+  [k]
+  (metric-index k))
 
 (def columns
   (mapv (fn [{:keys [key label description section]}]
@@ -252,7 +449,7 @@
            :explanation (brick-explanations key)
            :section section
            :keys [key]})
-    metrics))
+    registry))
 
 (def ^:private components-only-sections
   "Sections whose bricks are components only: a base's afferent coupling
@@ -273,11 +470,8 @@
            (components-only-sections key) (assoc :components-only true)))))
 
 (defn violation-section
-  [{:keys [section scope metric]}]
-  (or section
-    (when (= :function scope) :complexity)
-    (:section (metric-index metric))
-    :dependencies))
+  [{:keys [metric]}]
+  (:section (metric-index metric) :dependencies))
 
 (defn section-measurements
   [{:keys [components-only]} measurements]
@@ -305,18 +499,17 @@
     (/ (reduce + xs) (double (count xs)))))
 
 (defn- peers
-  "The measurements a metric compares: components only, when bases' values
-  follow from Polylith's structure (bases have no interface and no
-  dependents)."
-  [{:keys [components-only]} measurements]
-  (if components-only
-    (filter #(= :component (get-in % [:brick :type])) measurements)
-    measurements))
+  "The measurements a metric compares: those of the brick types it checks.
+  Bases' values often follow from Polylith's structure (bases have no
+  interface and no dependents), so they don't count toward a components'
+  metric."
+  [{:keys [checks]} measurements]
+  (filter #(contains? checks (get-in % [:brick :type])) measurements))
 
 (defn averages
   [measurements]
   (into {}
-    (for [{:keys [key] :as metric} metrics]
+    (for [{:keys [key] :as metric} registry]
       [key (mean-of (keep #(get-in % [:metrics key])
                       (peers metric measurements)))])))
 
@@ -326,7 +519,7 @@
 (defn outliers
   [measurements k]
   (into {}
-    (for [{:keys [key components-only] :as metric} metrics
+    (for [{:keys [key checks] :as metric} registry
           :let [values (keep #(when-some [v (get-in % [:metrics key])]
                                 [(get-in % [:brick :name]) v])
                          (peers metric measurements))]
@@ -339,13 +532,9 @@
           :let [z (/ (- v m) sd)]
           :when (<= k (abs z))]
       [[brick-name key] {:z z :mean m :std-dev sd
-                         :peers (if components-only :components :bricks)}])))
-
-(def ^:private function-metrics
-  [{:key :complexity :label "Complexity"}
-   {:key :depth :label "Nesting depth"}
-   {:key :forms :label "Forms"}
-   {:key :params :label "Parameters"}])
+                         :peers (if (= #{:component} checks)
+                                  :components
+                                  :bricks)}])))
 
 ;; Forms and nesting
 
@@ -471,9 +660,11 @@
   #{"defn" "defn-" "defmacro" "defmethod"})
 
 (defn- token-value
-  [node]
-  (when (= :token (n/tag node))
-    (n/sexpr node)))
+  "A token node's value, read with rewrite-clj sexpr options when given."
+  ([node] (token-value node {}))
+  ([node opts]
+   (when (= :token (n/tag node))
+     (n/sexpr node opts))))
 
 (defn- else?
   [node]
@@ -582,13 +773,27 @@
     :private :dynamic :const :doc :arglists :tag :added :deprecated
     :gen-class :load :reload :verbose :as-alias})
 
+(defn- reader-opts
+  "rewrite-clj sexpr options that resolve auto-resolved keywords as the
+  reader would in a file with ns-info: ::k in the file's namespace, and
+  ::alias/k in the namespace its ns form aliases with :as or :as-alias. An
+  alias the ns form doesn't name stays as written."
+  [{:keys [ns requires]}]
+  (let [aliases (into {}
+                  (for [{:keys [as as-alias] :as r} requires
+                        alias [as as-alias]
+                        :when alias]
+                    [alias (:ns r)]))]
+    {:auto-resolve #(if (= :current %) (or ns 'user) (aliases % %))}))
+
 (defn- keywords
-  "Data keywords in forms other than the ns form."
-  [top-level]
+  "Data keywords in forms other than the ns form, with auto-resolved
+  keywords resolved by opts, from reader-opts."
+  [top-level opts]
   (into (sorted-set)
     (comp (remove #(= "ns" (parse/head-symbol %)))
       (mapcat #(tree-seq n/inner? parse/code-children %))
-      (keep token-value)
+      (keep #(token-value % opts))
       (filter keyword?)
       (remove syntax-keywords))
     top-level))
@@ -650,8 +855,8 @@
 (defn- typed-data?
   "True if an ex-info data map has a :type key, in any namespace, or a
   :cognitect.anomalies/category key."
-  [map-node]
-  (some #(let [k (token-value %)]
+  [map-node opts]
+  (some #(let [k (token-value % opts)]
            (and (keyword? k)
              (or (= "type" (name k)) (= :cognitect.anomalies/category k))))
     (take-nth 2 (parse/code-children map-node))))
@@ -660,7 +865,7 @@
   "What a throw form throws: :typed or :untyped ex-info (by its literal data
   map), :unknown ex-info data, a :java exception constructed in place, or
   a :rethrow of something else."
-  [throw-node]
+  [throw-node opts]
   (let [arg (second (parse/code-children throw-node))
         head (some-> arg parse/head-symbol)]
     (cond
@@ -668,7 +873,7 @@
       (let [data (nth (parse/code-children arg) 2 nil)]
         (cond
           (not= :map (some-> data n/tag)) :unknown
-          (typed-data? data) :typed
+          (typed-data? data opts) :typed
           :else :untyped))
 
       (or (= "new" head) (some-> head (str/ends-with? "."))) :java
@@ -676,12 +881,13 @@
 
 (defn- error-handling
   "Every throw, as {:line :kind}, and every catch clause, as {:line :class
-  :broad?}, in top-level forms."
-  [top-level]
+  :broad?}, in top-level forms. opts, from reader-opts, resolve
+  auto-resolved keywords."
+  [top-level opts]
   (let [nodes (mapcat #(tree-seq n/inner? parse/code-children %) top-level)]
     {:throws (vec (for [node nodes
                         :when (= "throw" (parse/head-symbol node))]
-                    {:line (:row (meta node)) :kind (thrown-kind node)}))
+                    {:line (:row (meta node)) :kind (thrown-kind node opts)}))
      :catches (vec (for [node nodes
                          :when (= "catch" (parse/head-symbol node))
                          :let [class (some-> (second (parse/code-children node))
@@ -763,6 +969,7 @@
   [file source]
   (let [forms (parse/parse-string source)
         info (parse/ns-info forms)
+        opts (reader-opts info)
         top-level (parse/top-level-forms forms)]
     (merge
       (select-keys info [:ns :requires])
@@ -778,11 +985,11 @@
                                  (parse/head-symbol %)))
                       (keep definition)
                       vec)
-       :keywords (keywords top-level)
+       :keywords (keywords top-level opts)
        :fragments (fragments top-level)
        :mutable-state (vec (mutable-state top-level))
        :interop (interop-count top-level)}
-      (error-handling top-level))))
+      (error-handling top-level opts))))
 
 (defn- mean
   [xs]
@@ -883,13 +1090,9 @@
                                    :references])
               tests)}))
 
-(def ^:private labels
-  {:brick (into {} (map (juxt :key :label)) metrics)
-   :function (into {} (map (juxt :key :label)) function-metrics)})
-
 (defn label
-  [{:keys [scope metric label]}]
-  (or label (get-in labels [(or scope :brick) metric]) (name metric)))
+  [{:keys [metric label]}]
+  (or label (:label (metric-index metric)) (name metric)))
 
 (defn function-id
   [{:keys [ns name]}]

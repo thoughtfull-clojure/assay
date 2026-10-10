@@ -31,7 +31,7 @@
     (brick name to metrics), and :resolved (violations in base but not in
     head).
 
-  Violations are matched by brick, metric, rule, and :subject (a function
-  name or dependency), so a function that moves is still the same."
+  Violations are matched by brick, metric, and :subject (a function name
+  or finding), so a function that moves is still the same."
   [base head changed-files]
   (core/compare-reports base head changed-files))

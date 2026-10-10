@@ -191,19 +191,22 @@
     (is (contains? (:references t) 'a/g))))
 
 (deftest error-handling-test
-  (let [source (measure (str "(ns n)\n"
+  (let [source (measure (str "(ns n (:require [cognitect.anomalies"
+                          " :as-alias anom]))\n"
                           "(defn a [] (throw (ex-info \"x\" {:type ::bad})))\n"
                           "(defn b [] (throw (ex-info \"x\" {:command 1})))\n"
                           "(defn c [m] (throw (ex-info \"x\" m)))\n"
                           "(defn d [] (throw (IllegalStateException. \"x\")))\n"
                           "(defn e [] (try (a) (catch Exception ex (throw ex))\n"
                           "  (catch clojure.lang.ExceptionInfo _ nil)))\n"
-                          "(defn f [] (a))\n"))]
-    (is (= [:typed :untyped :unknown :java :rethrow]
+                          "(defn f [] (a))\n"
+                          "(defn g [] (throw (ex-info \"x\""
+                          " {::anom/category ::anom/fault})))\n"))]
+    (is (= [:typed :untyped :unknown :java :rethrow :typed]
           (map :kind (:throws source))))
     (is (= [["Exception" true] ["clojure.lang.ExceptionInfo" false]]
           (map (juxt :class :broad?) (:catches source))))
-    (is (= [true true true true true false]
+    (is (= [true true true true true false true]
           (map :throws? (:definitions source)))
       "f only calls a definition that throws")))
 
@@ -227,9 +230,9 @@
 (deftest columns-test
   (is (= ["Files" "Forms" "Functions" "Mean function complexity"
           "Mean nesting depth"]
-        (map :label (take 5 metrics/columns))))
+        (map :label (take 5 (:columns (second metrics/sections))))))
   (is (= "2.5"
-        (metrics/column-text (nth metrics/columns 3)
+        (metrics/column-text (nth (:columns (second metrics/sections)) 3)
           {:mean-function-complexity 2.46})))
   (is (= "0.33" (metrics/format-value :instability 1/3)))
   (is (= "–" (metrics/format-value :instability nil))))
@@ -243,46 +246,41 @@
           :afferent 1.0
           :efferent nil
           :instability 0.5
-          :abstractness nil
-          :cohesion nil
-          :shared-keywords nil
-          :libraries nil
-          :shared-libraries nil
-          :mutable-state nil
-          :error-surface nil
-          :untyped-errors nil
-          :catches nil
-          :broad-catches nil
-          :interop nil
-          :interop-density nil
-          :tests nil
-          :assertions-per-test nil
-          :forms-per-test nil
-          :isolation-hazards nil
-          :untested-interface nil
-          :test-ratio nil}
-        (metrics/averages
-          [{:brick {:type :component}
-            :metrics {:files 1 :forms 10 :functions 1
-                      :mean-function-complexity 6.0
-                      :mean-function-depth 4.0
-                      :instability 0.25}
-            :functions [{:complexity 6 :depth 4}]}
-           {:brick {:type :component}
-            :metrics {:files 2 :forms 20 :functions 3
-                      :mean-function-complexity 2.0
-                      :mean-function-depth 2.0
-                      :instability 0.75 :afferent 1}
-            :functions [{:complexity 1 :depth 2} {:complexity 2 :depth 2}
-                        {:complexity 3 :depth 2}]}]))
+          :cohesion nil}
+        (select-keys
+          (metrics/averages
+            [{:brick {:type :component}
+              :metrics {:files 1 :forms 10 :functions 1
+                        :mean-function-complexity 6.0
+                        :mean-function-depth 4.0
+                        :instability 0.25}
+              :functions [{:complexity 6 :depth 4}]}
+             {:brick {:type :component}
+              :metrics {:files 2 :forms 20 :functions 3
+                        :mean-function-complexity 2.0
+                        :mean-function-depth 2.0
+                        :instability 0.75 :afferent 1}
+              :functions [{:complexity 1 :depth 2} {:complexity 2 :depth 2}
+                          {:complexity 3 :depth 2}]}])
+          [:files :forms :functions :mean-function-complexity
+           :mean-function-depth :afferent :efferent :instability :cohesion]))
     "the mean of each brick's value, skipping bricks without one")
+  (is (= (set (map :key metrics/metrics))
+        (set (keys (metrics/averages []))))
+    "every metric")
+  (is (= {:mutable-state 1.0}
+        (select-keys (metrics/averages
+                       [{:brick {:type :component} :metrics {:mutable-state 1}}
+                        {:brick {:type :base} :metrics {:mutable-state 5}}])
+          [:mutable-state]))
+    "of the brick types the metric checks")
   (is (= "1.5" (metrics/format-value :files 1.5)))
   (is (= "2" (metrics/format-value :files 2.0))))
 
 (deftest outliers-test
   (let [bricks (fn [& forms]
                  (map-indexed (fn [i n]
-                                {:brick {:name (str "b" i)}
+                                {:brick {:name (str "b" i) :type :component}
                                  :metrics {:forms n :abstractness nil}})
                    forms))]
     (testing "values at least k standard deviations from the mean, either way"
@@ -348,7 +346,14 @@
         (:keywords (measure (str "(ns foo (:require [a :as b]))\n"
                               "(defn f [{:keys [id]}] {:id id :name 1"
                               " :x/qualified 2})"))))
-    "data keywords only: not the ns form or syntax like :keys"))
+    "data keywords only: not the ns form or syntax like :keys")
+  (is (= #{:foo/own :a/aliased :c.d/as-aliased :zz/unknown :p/id}
+        (:keywords (measure (str "(ns foo (:require [a :as b]"
+                              " [c.d :as-alias d]))\n"
+                              "[::own ::b/aliased ::d/as-aliased ::zz/unknown"
+                              " #:p{:id 1}]"))))
+    (str "auto-resolved keywords resolve in the file's namespace and its"
+      " aliases; an unknown alias stays as written")))
 
 (deftest fragments-test
   (let [big (str "(let [a 1 b 2 c 3 d 4 e 5] (+ a b c d e) (* a b c d e))")
@@ -365,6 +370,6 @@
 
 (deftest label-test
   (is (= "Forms" (metrics/label {:metric :forms})))
-  (is (= "Parameters" (metrics/label {:scope :function :metric :params})))
+  (is (= "Complex functions" (metrics/label {:metric :function-complexity})))
   (is (= "Custom" (metrics/label {:metric :forms :label "Custom"})))
   (is (= "mystery" (metrics/label {:metric :mystery}))))

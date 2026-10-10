@@ -91,16 +91,14 @@
     (str " (`" file ":" line "`" (when name (str " " name)) ")")))
 
 (defn- flagged-cells
-  "Map of [brick name, metric] to the worst level of brick violations that
-  a change introduced or, without a comparison, of all brick violations."
+  "Map of [brick name, metric] to the worst level of the violations that a
+  change introduced or, without a comparison, of all violations."
   [violations]
   (reduce
     (fn [acc {:keys [brick metric level]}]
       (update acc [(:name brick) metric] thresholds/worse-level level))
     {}
-    (->> violations
-      (filter #(= :brick (:scope % :brick)))
-      (remove (comp #{:existing :indirect} :status)))))
+    (remove (comp #{:existing :indirect} :status) violations)))
 
 (defn- headline
   [{:keys [bricks violations comparison hidden-warnings]}]

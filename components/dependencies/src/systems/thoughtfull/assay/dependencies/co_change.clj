@@ -63,30 +63,23 @@
        :changes (counts fewer)
        :strength (/ n (double (counts fewer)))})))
 
-(defn violations
+(defn findings
   "Hidden co-change coupling: pairs that changed together in at least
-  min-shared commits, with at least min-strength, and no dependency path
-  between them. Each is reported on the less changed brick, and marked
-  :historical?, since it comes from history rather than from the code."
-  [{:keys [min-shared min-strength max-bricks-per-commit level]}
-   {:keys [bricks edges commits]}]
+  min-shared commits, with no dependency path between them, with their
+  strength as their value. Each is reported on the less changed brick,
+  and marked :historical?, since it comes from history rather than from
+  the code."
+  [{:keys [min-shared max-bricks-per-commit]} {:keys [bricks edges commits]}]
   (let [index (into {} (map (juxt (comp :name :brick) :brick)) bricks)
         connected? (connected-fn edges)]
     (for [{[a b] :bricks :keys [shared changes strength]}
           (sort-by :bricks (pairs (map :brick bricks) commits
                              max-bricks-per-commit))
           :when (and (>= shared min-shared)
-                  (>= strength min-strength)
                   (not (connected? a b)))]
-      {:scope :dependency
-       :brick (index a)
-       :metric :co-change
-       :label "Co-change"
+      {:brick (index a)
        :subject b
        :value strength
-       :limit min-strength
-       :level level
-       :rule {:rule :co-change}
        :historical? true
        :message (str "with " b " in " shared " of its " changes
                   " commits (" (Math/round (* 100 strength)) "%), though"

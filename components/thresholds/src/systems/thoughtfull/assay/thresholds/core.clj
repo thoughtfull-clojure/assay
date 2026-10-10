@@ -3,28 +3,115 @@
    [clojure.string :as str]
    [systems.thoughtfull.assay.metrics.interface :as metrics]))
 
+(def ^:private levels
+  "Threshold levels, most severe first: a value past both is an error."
+  [:error :warning])
+
 (def default-config
-  {:brick-thresholds
-   {:abstractness [{:rule :min :value 0.5 :level :warning
-                    :types #{:component}}]
-    :cohesion [{:rule :min :value 0.5 :level :warning
-                :types #{:component}}]
-    :assertions-per-test [{:rule :std-devs :value 2 :level :warning
-                           :peer-types #{:component}}]
-    :forms-per-test [{:rule :std-devs :value 2 :level :warning
-                      :peer-types #{:component}}]}
-   :function-thresholds
-   {:complexity [{:rule :max :value 10 :level :error}]
-    :depth [{:rule :max :value 8 :level :warning}]
-    :forms [{:rule :max :value 150 :level :warning}]
-    :params [{:rule :max :value 4 :level :warning}]}})
+  (reduce (fn [config {:keys [key section default options]}]
+            (if (or default options)
+              (assoc-in config [section key] (merge options default))
+              config))
+    {}
+    metrics/metrics))
+
+;; Config
+
+(def ^:private old-keys
+  #{:function-thresholds :brick-thresholds :dependency-rules :io-rules
+    :error-handling-rules :test-rules})
+
+(def ^:private section-keys
+  (set (map :key metrics/sections)))
+
+(defn- invalid
+  [message data]
+  (throw (ex-info message (assoc data :type ::invalid-config))))
+
+(defn- check-threshold
+  [k level t kind]
+  (cond
+    (or (nil? t) (number? t)) nil
+
+    (and (map? t) (number? (:std-devs t))
+      (every? #{:std-devs :min-peers} (keys t)))
+    (when (not= :brick kind)
+      (invalid (str "{:std-devs n} applies only to a brick's own value,"
+                 " not to " (pr-str k))
+        {:metric k :level level}))
+
+    :else
+    (invalid (str "The " (name level) " threshold of " (pr-str k)
+               " must be a number, {:std-devs n}, or nil, not " (pr-str t))
+      {:metric k :level level})))
+
+(defn- check-settings
+  [section k settings]
+  (let [{:keys [kind options] :as metric} (metrics/metric k)]
+    (cond
+      (nil? metric)
+      (invalid (str "Unknown metric " (pr-str k) " under " (pr-str section))
+        {:metric k :section section})
+
+      (not= section (:section metric))
+      (invalid (str (pr-str k) " belongs under " (pr-str (:section metric))
+                 ", not " (pr-str section))
+        {:metric k :section section :belongs (:section metric)})
+
+      (nil? settings) nil
+
+      (not (map? settings))
+      (invalid (str "The settings of " (pr-str k) " must be a map or nil,"
+                 " not " (pr-str settings))
+        {:metric k})
+
+      :else
+      (do (doseq [setting (keys settings)
+                  :when (not (contains? (into (set levels) (keys options))
+                               setting))]
+            (invalid (str "Unknown setting " (pr-str setting) " for "
+                       (pr-str k))
+              {:metric k :setting setting}))
+        (doseq [level levels]
+          (check-threshold k level (get settings level) kind))))))
+
+(defn- check-config
+  [config]
+  (when-let [old (seq (filter old-keys (keys config)))]
+    (invalid (str "Config keys " (str/join ", " (map pr-str (sort old)))
+               " are from an older version of assay. Group metrics by"
+               " report section instead, such as {:complexity"
+               " {:function-complexity {:error 10}}}; see the README.")
+      {:keys (vec old)}))
+  (doseq [[section metric-settings] config]
+    (when-not (contains? section-keys section)
+      (invalid (str "Unknown section " (pr-str section) "; sections are "
+                 (str/join ", " (map (comp pr-str :key) metrics/sections)))
+        {:section section}))
+    (when-not (map? metric-settings)
+      (invalid (str (pr-str section) " must map metrics to settings")
+        {:section section}))
+    (doseq [[k settings] metric-settings]
+      (check-settings section k settings))))
 
 (defn merge-config
   [config]
-  {:brick-thresholds (merge (:brick-thresholds default-config)
-                       (:brick-thresholds config))
-   :function-thresholds (merge (:function-thresholds default-config)
-                          (:function-thresholds config))})
+  (check-config config)
+  (merge-with (fn [defaults configured]
+                (reduce-kv (fn [merged k settings]
+                             (assoc merged k
+                               (when (some? settings)
+                                 (merge (get defaults k) settings))))
+                  defaults
+                  configured))
+    default-config
+    config))
+
+(defn settings
+  [config k]
+  (get-in config [(:section (metrics/metric k)) k]))
+
+;; Evaluation
 
 (defn- mean
   [xs]
@@ -43,136 +130,177 @@
     (str (long x))
     (str/replace (format "%.2f" (double x)) #"\.?0+$" "")))
 
-(defmulti evaluate
-  "Evaluate rule against a brick's value and its peers' values. Returns nil
-  if the rule passes, or a map of :limit, :message, and optionally :stats."
-  (fn [rule _value _peer-values] (:rule rule)))
+(defn- past?
+  [direction limit value]
+  (case direction
+    :max (> value limit)
+    :min (< value limit)))
 
-(defmethod evaluate :max
-  [{limit :value} value _]
-  (when (> value limit)
-    {:limit limit
-     :message (str (fmt value) " is above the maximum of " (fmt limit))}))
+(defn- limit-text
+  [direction limit]
+  (str (if (= :max direction) "above the maximum of " "below the minimum of ")
+    (fmt limit)))
 
-(defmethod evaluate :min
-  [{limit :value} value _]
-  (when (< value limit)
-    {:limit limit
-     :message (str (fmt value) " is below the minimum of " (fmt limit))}))
+(defn- first-level
+  "The most severe level of settings whose threshold f finds value past,
+  as f's result with :level."
+  [settings f]
+  (some (fn [level]
+          (when-some [t (get settings level)]
+            (some-> (f t) (assoc :level level))))
+    levels))
 
 (defn- peer-noun
-  "What a :std-devs rule's peer is called: its type, when the rule names
-  one."
-  [peer-types]
-  (if (= 1 (count peer-types))
-    (name (first peer-types))
-    "brick"))
+  [checks]
+  (if (= #{:component} checks) "component" "brick"))
 
-(defmethod evaluate :std-devs
-  [{k :value :keys [min-peers peer-types] :or {min-peers 3}} value
-   peer-values]
+(defn- std-devs-result
+  [{k :std-devs :keys [min-peers] :or {min-peers 3}} {:keys [direction checks]}
+   value peer-values]
   (when (>= (count peer-values) (max 2 min-peers))
     (let [m (mean peer-values)
           sd (std-dev peer-values)
-          limit (+ m (* k sd))
-          stats {:mean m :std-dev sd :peers (count peer-values)}]
-      (when (> value limit)
+          limit (if (= :max direction) (+ m (* k sd)) (- m (* k sd)))
+          side (if (= :max direction) "above" "below")]
+      (when (past? direction limit value)
         {:limit limit
-         :stats stats
+         :stats {:mean m :std-dev sd :peers (count peer-values)}
          :message (if (zero? sd)
-                    (str (fmt value) " is above every other "
-                      (peer-noun peer-types) " (" (fmt m) ")")
+                    (str (fmt value) " is " side " every other "
+                      (peer-noun checks) " (" (fmt m) ")")
                     (str (fmt value) " is "
-                      (format "%.1f" (/ (- value m) sd))
-                      " standard deviations above the mean of "
-                      (count peer-values) " other "
-                      (peer-noun peer-types) "s ("
+                      (format "%.1f" (Math/abs (/ (- value m) sd)))
+                      " standard deviations " side " the mean of "
+                      (count peer-values) " other " (peer-noun checks) "s ("
                       (fmt m) " ± " (fmt sd) "), over the limit of "
                       (fmt k)))}))))
 
-(defmethod evaluate :default
-  [rule _ _]
-  (throw (ex-info (str "Unknown threshold rule: " (pr-str (:rule rule)))
-           {:rule rule})))
+(defn- value-result
+  "The result of comparing value with threshold t, a number, or nil when it
+  isn't past it."
+  [direction t value]
+  (when (past? direction t value)
+    {:limit t
+     :message (str (fmt value) " is " (limit-text direction t))}))
 
-(defn- peer-values
-  "The metric's values in the other bricks a rule compares measurement
-  with: those of the rule's :peer-types, or of the brick's own type."
-  [measurements measurement metric {:keys [peer-types]}]
-  (let [{:keys [type name]} (:brick measurement)
-        peer? (or peer-types #{type})]
-    (for [other measurements
-          :let [brick (:brick other)
-                v (get-in other [:metrics metric])]
-          :when (and (peer? (:type brick))
-                  (not= name (:name brick))
-                  (some? v))]
-      v)))
+(defn- checked?
+  [{:keys [checks]} brick]
+  (contains? checks (:type brick)))
 
-(defn- applies?
-  [rule brick]
-  (or (nil? (:types rule)) (contains? (:types rule) (:type brick))))
+(defn- base-violation
+  [{:keys [key section kind direction]}]
+  {:metric key :section section :kind kind :direction direction})
 
-(defn- brick-violations
-  [thresholds measurements]
-  (for [measurement measurements
-        [metric rules] thresholds
-        rule rules
-        :let [brick (:brick measurement)
-              value (get-in measurement [:metrics metric])
-              result (when (and (some? value) (applies? rule brick))
-                       (evaluate rule value
-                         (peer-values measurements measurement metric
-                           rule)))]
-        :when result]
-    (merge {:scope :brick
-            :brick brick
-            :metric metric
-            :value value
-            :rule rule
-            :level (:level rule :error)}
-      result)))
+(defmulti ^:private violations
+  "Violations of a metric's settings, given the measurements and the
+  metric's findings."
+  (fn [metric _settings _bricks _findings] (:kind metric)))
 
-(def ^:private function-rules
-  #{:max :min})
+(defmethod violations :brick
+  [{:keys [key direction] :as metric} settings bricks _]
+  (let [checked (filter #(checked? metric (:brick %)) bricks)]
+    (for [{:keys [brick] :as m} checked
+          :let [value (get-in m [:metrics key])]
+          :when (some? value)
+          :let [peer-values (for [other checked
+                                  :when (not= (:name brick)
+                                          (get-in other [:brick :name]))
+                                  :let [v (get-in other [:metrics key])]
+                                  :when (some? v)]
+                              v)
+                result (first-level settings
+                         #(if (map? %)
+                            (std-devs-result % metric value peer-values)
+                            (value-result direction % value)))]
+          :when result]
+      (merge (base-violation metric) {:brick brick :value value} result))))
 
-(defn- check-function-rule
-  [metric rule]
-  (when-not (function-rules (:rule rule))
-    (throw (ex-info (str "Function thresholds support only :max and :min, not "
-                      (pr-str (:rule rule)) " (for " metric ")")
-             {:metric metric :rule rule}))))
-
-(defn- function-violations
-  [thresholds measurements]
-  (doseq [[metric rules] thresholds
-          rule rules]
-    (check-function-rule metric rule))
-  (for [{:keys [brick functions]} measurements
+(defmethod violations :function
+  [{:keys [direction function-key line-key] :as metric} settings bricks _]
+  (for [{:keys [brick functions]} bricks
+        :when (checked? metric brick)
         function functions
-        [metric rules] thresholds
-        rule rules
-        :let [value (get function metric)
-              result (when (some? value) (evaluate rule value nil))]
+        :let [value (get function function-key)]
+        :when (some? value)
+        :let [result (first-level settings #(value-result direction % value))]
         :when result]
-    (merge {:scope :function
-            :brick brick
-            :metric metric
-            :value value
-            :rule rule
-            :level (:level rule :error)
-            :subject (metrics/function-id function)
-            :location {:file (:file function)
-                       :line (if (= :depth metric)
-                               (:depth-line function)
-                               (:line function))
-                       :name (:name function)}}
+    (merge (base-violation metric)
+      {:brick brick
+       :value value
+       :subject (metrics/function-id function)
+       :location {:file (:file function)
+                  :line (get function (or line-key :line))
+                  :name (:name function)}}
       result)))
+
+(defmethod violations :finding
+  [{:keys [direction] :as metric} settings _ findings]
+  (for [{:keys [brick value message] :as finding} findings
+        :when (and (checked? metric brick) (some? value))
+        :let [result (first-level settings
+                       #(when (past? direction % value)
+                          {:limit %
+                           :message (str message " ("
+                                      (limit-text direction %) ")")}))]
+        :when result]
+    (merge finding (base-violation metric) result)))
+
+(defmethod violations :count
+  [{:keys [direction] :as metric} settings bricks findings]
+  (let [by-brick (group-by (comp :name :brick) findings)]
+    (for [{:keys [brick]} bricks
+          :when (checked? metric brick)
+          :let [found (by-brick (:name brick))
+                n (count found)
+                result (first-level settings
+                         #(when (past? direction % n) {:limit %}))]
+          :when result
+          finding found]
+      (merge finding (base-violation metric)
+        {:value n}
+        result
+        (when-not (zero? (:limit result))
+          {:message (str (:message finding) " (" n " in this brick, "
+                      (limit-text direction (:limit result)) ")")})))))
+
+(defn- on?
+  [settings]
+  (some #(some? (get settings %)) levels))
+
+(defn- counts
+  "Each brick's value of the metrics whose values come from evaluating
+  them: for a :function or :finding metric, its violations; for a :count
+  metric, its findings. nil for a brick of a type the metric doesn't
+  describe, or a :function or :finding metric that is off."
+  [config bricks findings violations]
+  (let [violated (frequencies (map (juxt :metric (comp :name :brick))
+                                violations))
+        found (frequencies (for [[k fs] findings
+                                 f fs]
+                             [k (:name (:brick f))]))]
+    (for [{:keys [brick] :as m} bricks]
+      (update m :metrics merge
+        (into {}
+          (for [{:keys [key kind types]} (map metrics/metric
+                                           (map :key metrics/metrics))
+                :when (#{:function :finding :count} kind)]
+            [key (when (contains? types (:type brick))
+                   (case kind
+                     :count (found [key (:name brick)] 0)
+                     (when (on? (settings config key))
+                       (violated [key (:name brick)] 0))))]))))))
 
 (defn check
-  [{:keys [brick-thresholds function-thresholds]} measurements]
-  (vec (concat (brick-violations brick-thresholds measurements)
-         (function-violations function-thresholds measurements))))
+  [config bricks findings]
+  (let [found (vec
+                (for [{:keys [key]} metrics/metrics
+                      :let [metric (metrics/metric key)
+                            s (settings config key)]
+                      :when (on? s)
+                      v (violations metric s bricks (get findings key))]
+                  v))]
+    {:bricks (vec (counts config bricks findings found))
+     :violations found}))
 
 (defn worse-level
   [a b]

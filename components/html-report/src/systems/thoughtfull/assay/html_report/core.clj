@@ -309,15 +309,15 @@ details.legend dd code {
 
 (defn- flagged-cells
   "Map of a cell key, from cell-key, to the worst :level and the :messages
-  of the introduced violations of scope."
-  [violations scope cell-key]
+  of the introduced violations."
+  [violations cell-key]
   (reduce
     (fn [acc {:keys [level message] :as v}]
       (-> acc
         (update-in [(cell-key v) :level] thresholds/worse-level level)
         (update-in [(cell-key v) :messages] (fnil conj []) message)))
     {}
-    (filter #(and (= scope (:scope % :brick)) (introduced? %)) violations)))
+    (filter introduced? violations)))
 
 (defn- metric-cell
   [{:keys [level messages outlier?]} text]
@@ -402,7 +402,7 @@ details.legend dd code {
    comparison]
   (let [bricks (metrics/section-measurements section all-bricks)
         noun (if components-only "component" "brick")
-        flagged (flagged-cells violations :brick
+        flagged (flagged-cells violations
                   (juxt (comp :name :brick) :metric))
         outliers (metrics/outliers bricks metrics/outlier-std-devs)
         averages (metrics/averages bricks)
@@ -606,85 +606,42 @@ function viewer(graph) {
 
 ;; Thresholds
 
-(defn- rule-text
-  "A rule in short notation, such as \"≤ 10\"."
-  [{:keys [rule value types peer-types]}]
-  (str
-    (case rule
-      :max (str "≤ " value)
-      :min (str "≥ " value)
-      :std-devs (str "≤ mean + " value "σ of other "
-                  (if (= 1 (count peer-types))
-                    (str (name (first peer-types)) "s")
-                    "bricks"))
-      (pr-str rule))
-    (when types
-      (str " (" (str/join ", " (map #(str (name %) "s") (sort types))) ")"))))
+(defn- threshold-text
+  "A threshold in short notation, the values it flags, such as \"> 10\"."
+  [{:keys [direction]} t]
+  (let [op (if (= :max direction) "> " "< ")]
+    (cond
+      (nil? t) ""
+      (map? t) (str op "mean " (if (= :max direction) "+ " "− ")
+                 (:std-devs t) "σ")
+      :else (str op t))))
+
+(defn- applies-to
+  "Which bricks, or functions of which bricks, a metric checks."
+  [{:keys [kind checks]}]
+  (let [bricks (if (= #{:component} checks) "components" "bricks")]
+    (if (= :function kind) (str "functions of " bricks) bricks)))
+
+(defn- option-text
+  [[k v]]
+  (str (name k) " "
+    (if (coll? v) (str/join ", " (sort (map str v))) v)))
 
 (defn- threshold-rows
-  "A row map for each threshold rule: its :section, and its :cells after
-  the category."
-  [applies-to scope thresholds]
-  (for [[metric rules] (sort-by key thresholds)
-        {:keys [level] :or {level :error} :as rule} rules]
-    {:section (metrics/violation-section {:scope scope :metric metric})
-     :cells [applies-to
-             (metrics/label {:scope scope :metric metric})
-             (rule-text rule)
-             (level-badge level)]}))
-
-(defn- percent
-  [x]
-  (Math/round (* 100 (double x))))
-
-(def ^:private dependency-rule-texts
-  "Each dependency rule's [metric rule] text, from its settings."
-  {:stable-dependencies (constantly ["Stable dependencies"
-                                     "only on more stable bricks"])
-   :mutable-state (constantly ["Mutable state" "none in components"])
-   :broad-catch (constantly ["Broad catch" "none in components"])
-   :test-boundary (constantly ["Test boundary"
-                               "tests use other bricks' interfaces only"])
-   :connascence-of-position
-   (fn [{:keys [max]}]
-     ["Connascence of position"
-      (str "≤ " max " positional parameters in interface functions others"
-        " call")])
-   :duplicate-code
-   (fn [{:keys [min-forms]}]
-     ["Duplicate code" (str "none of ≥ " min-forms " forms across bricks")])
-   :co-change
-   (fn [{:keys [since min-shared min-strength]}]
-     ["Co-change"
-      (str "no bricks without a dependency that changed together in ≥ "
-        min-shared " commits and ≥ " (percent min-strength)
-        "% of one's commits, over " since)])
-   :library-spread
-   (fn [{:keys [max-bricks]}]
-     ["Library spread"
-      (str "each library required by ≤ " max-bricks
-        (if (= 1 max-bricks) " brick" " bricks"))])
-   :merge-candidates
-   (fn [{:keys [max-size]}]
-     ["Merge candidates"
-      (str "no component with one component dependent, ≤ " (percent max-size)
-        "% of its size")])})
-
-(defn- dependency-rule-text
-  "A dependency rule's [metric rule] text. Some rules have settings."
-  [rule setting]
-  (if-let [text (dependency-rule-texts rule)]
-    (text setting)
-    [(name rule) ""]))
-
-(defn- rule-group-rows
-  [section rules]
-  (for [[rule setting] (sort-by key rules)
-        :let [level (if (map? setting) (:level setting) setting)
-              [metric text] (dependency-rule-text rule
-                              (when (map? setting) setting))]]
+  "A row map for each metric with settings: its :section, and its :cells
+  after the category."
+  [config]
+  (for [{:keys [key]} metrics/metrics
+        :let [{:keys [section options] :as metric} (metrics/metric key)
+              settings (thresholds/settings config key)]
+        :when settings]
     {:section section
-     :cells ["Bricks" metric text (if level (level-badge level) "off")]}))
+     :cells [(:label metric)
+             (applies-to metric)
+             [:td {:class "num"} (threshold-text metric (:warning settings))]
+             [:td {:class "num"} (threshold-text metric (:error settings))]
+             (str/join "; " (map option-text
+                              (select-keys settings (keys options))))]}))
 
 (defn- category-group
   "A section's rows, the first starting with a tinted category cell that
@@ -705,19 +662,13 @@ function viewer(graph) {
       metrics/sections)))
 
 (defn- thresholds-section
-  "Every rule in one table, grouped by category."
-  [{:keys [thresholds rules]}]
+  "Every metric with thresholds in one table, grouped by category."
+  [{:keys [thresholds]}]
   (list
     [:h2 "Thresholds"]
-    (table ["Category" "Applies to" "Metric" "Rule" "Level"]
-      (category-rows
-        (concat
-          (threshold-rows "Functions" :function
-            (:function-thresholds thresholds))
-          (threshold-rows "Bricks" :brick (:brick-thresholds thresholds))
-          (for [[group section] dependencies/rule-group-sections
-                row (rule-group-rows section (get rules group))]
-            row))))))
+    (table ["Category" "Metric" "Applies to" [{:class "num"} "Warning"]
+            [{:class "num"} "Error"] "Options"]
+      (category-rows (threshold-rows thresholds)))))
 
 ;; Page
 

@@ -23,10 +23,10 @@
     (update-vals keywords-of
       (fn [ks] (count (filter #(< 1 (brick-counts %)) ks))))))
 
-(defn position-violations
-  "Interface functions that other bricks use, with more than max
-  positional parameters."
-  [{:keys [max level]} workspace measurements used]
+(defn positional-interface
+  "Interface functions of components that other bricks use, with their
+  positional parameters as their value."
+  [workspace measurements used]
   (let [segments (names/segments (:top-namespace workspace) measurements)]
     (for [{:keys [brick sources functions]} measurements
           :when (= :component (:type brick))
@@ -37,27 +37,20 @@
                                        sources))]
           {:keys [name file line params]} functions
           :when (and (interface-files file)
-                  (used [own (symbol name)])
-                  (> params max))]
-      {:scope :dependency
-       :brick brick
-       :metric :connascence-of-position
-       :label "Connascence of position"
+                  (used [own (symbol name)]))]
+      {:brick brick
        :subject name
        :value params
-       :limit max
-       :level level
-       :rule {:rule :connascence-of-position :max max}
        :location {:file file :line line :name name}
        :message (str "has " params " positional parameters, and other bricks"
-                  " call it; above " max ". Consider taking a map.")})))
+                  " call it; consider taking a map")})))
 
 (defn- occurrences
-  [min-forms measurements]
+  [limit measurements]
   (for [{:keys [brick sources]} measurements
         {:keys [file fragments]} sources
         fragment fragments
-        :when (>= (:forms fragment) min-forms)]
+        :when (> (:forms fragment) limit)]
     (assoc fragment :brick brick :file file)))
 
 (defn- contained?
@@ -70,11 +63,12 @@
            (>= (:end-line %) (:end-line o)))
     duplicated))
 
-(defn algorithm-violations
-  "Code of at least min-forms forms that appears in more than one brick.
-  Only the largest duplicated form is reported, not the forms inside it."
-  [{:keys [min-forms level]} measurements]
-  (let [by-hash (group-by :hash (occurrences min-forms measurements))
+(defn duplicates
+  "Code of more than limit forms that appears in more than one brick, with
+  its forms as its value. Only the largest duplicated form is reported,
+  not the forms inside it."
+  [limit measurements]
+  (let [by-hash (group-by :hash (occurrences limit measurements))
         duplicated (filter #(< 1 (count (set (map (comp :name :brick) %))))
                      (vals by-hash))
         all-duplicated (apply concat duplicated)]
@@ -83,15 +77,9 @@
           :when (not (contained? all-duplicated o))
           :let [others (remove #(= (:brick %) (:brick o)) group)
                 other (first others)]]
-      {:scope :dependency
-       :brick (:brick o)
-       :metric :duplicate-code
-       :label "Duplicate code"
+      {:brick (:brick o)
        :subject (str (:hash o))
        :value (:forms o)
-       :limit min-forms
-       :level level
-       :rule {:rule :duplicate-code :min-forms min-forms}
        :location {:file (:file o) :line (:line o)}
        :message (str "duplicates " (:forms o) " forms in "
                   (str/join ", " (sort (set (map (comp :name :brick) others))))

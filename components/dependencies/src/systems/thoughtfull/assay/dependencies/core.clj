@@ -9,66 +9,6 @@
    [systems.thoughtfull.assay.dependencies.names :as names]
    [systems.thoughtfull.assay.dependencies.tests :as tests]))
 
-(def default-rules
-  {:dependency-rules {:stable-dependencies :error
-                      :connascence-of-position {:max 3 :level :warning}
-                      :duplicate-code {:min-forms 30 :level :warning}
-                      :merge-candidates {:max-size 0.25 :level :warning}
-                      :co-change {:since "12 months" :min-shared 5
-                                  :min-strength 0.5 :max-bricks-per-commit 5
-                                  :level :warning}
-                      :library-spread {:max-bricks 1 :level :warning}}
-   :io-rules {:mutable-state :warning}
-   :error-handling-rules {:broad-catch :warning}
-   :test-rules {:test-boundary :warning}})
-
-(def rule-group-sections
-  "Each rule group's config key and the report section its rules belong
-  to, in the order of the sections."
-  [[:dependency-rules :dependencies]
-   [:io-rules :io]
-   [:error-handling-rules :errors]
-   [:test-rules :tests]])
-
-(def ^:private rule-group
-  "Each rule's group, the config key it belongs under."
-  (into {}
-    (for [[group rules] default-rules
-          rule (keys rules)]
-      [rule group])))
-
-(defn- merge-group
-  "Merge configured rules over a group's defaults. A map-valued rule merges
-  key by key, so {:duplicate-code {:min-forms 50}} keeps the default level."
-  [defaults rules]
-  (merge-with (fn [default configured]
-                (if (and (map? default) (map? configured))
-                  (merge default configured)
-                  configured))
-    defaults rules))
-
-(defn- check-group
-  "Throw for a rule configured under a group it doesn't belong to."
-  [group rules]
-  (doseq [rule (keys rules)
-          :let [belongs (rule-group rule)]
-          :when (and belongs (not= group belongs))]
-    (throw (ex-info (str (pr-str rule) " belongs under " (pr-str belongs)
-                      ", not " (pr-str group))
-             {:rule rule :group group :belongs belongs}))))
-
-(defn merge-rules
-  [config]
-  (into {}
-    (for [[group defaults] default-rules
-          :let [rules (get config group)]]
-      (do (check-group group rules)
-        [group (merge-group defaults rules)]))))
-
-(defn merge-flat-rules
-  [rules]
-  (merge-group (apply merge (vals default-rules)) rules))
-
 (defn- fmt
   [x]
   (str/replace (format "%.2f" (double x)) #"\.?0+$" ""))
@@ -109,11 +49,15 @@
   [workspace own measurement efferent afferent]
   (let [ce (count efferent)
         ca (count afferent)
-        instability (when (pos? (+ ca ce)) (/ ce (double (+ ca ce))))]
+        instability (when (pos? (+ ca ce)) (/ ce (double (+ ca ce))))
+        abstractness (abstractness workspace own measurement)]
     {:afferent ca
      :efferent ce
      :instability instability
-     :abstractness (abstractness workspace own measurement)}))
+     :abstractness abstractness
+     :main-sequence-distance (when (and abstractness instability)
+                               (Math/abs (- (+ abstractness instability)
+                                           1.0)))}))
 
 (defn analyze
   [{:keys [top-namespace] :as workspace} measurements]
@@ -150,39 +94,35 @@
                    (test-metrics brick-name)
                    {:shared-keywords (shared-keywords brick-name)})))}))
 
-;; Checks
+;; Findings
 
 (defn- brick-index
   [bricks]
   (into {} (map (juxt (comp :name :brick) identity)) bricks))
 
-(defn- stable-dependency-violations
-  [level {:keys [bricks edges]}]
+(defn- unstable-dependencies
+  "Each dependency on a brick less stable than the depending one, with the
+  difference in instability as its value."
+  [{:keys [bricks edges]}]
   (let [index (brick-index bricks)
         instability #(get-in index [% :metrics :instability])]
     (for [{:keys [from to location]} edges
           :let [i-from (instability from)
                 i-to (instability to)]
           :when (and i-from i-to (> i-to i-from))]
-      {:scope :dependency
-       :brick (get-in index [from :brick])
-       :metric :stable-dependencies
-       :label "Stable dependencies"
+      {:brick (get-in index [from :brick])
        :subject to
-       :value i-to
-       :limit i-from
-       :level level
-       :rule {:rule :stable-dependencies}
+       :value (- i-to i-from)
        :location location
        :message (str "depends on " to " (instability " (fmt i-to)
                   "), which is less stable than " from " ("
                   (fmt i-from) ")")})))
 
-(defn- merge-candidate-violations
-  "Components with one dependent, itself a component, and at most max-size
-  times its forms. Moving one into a base would go against Polylith, so a
-  base's components don't count."
-  [{:keys [max-size level]} {:keys [bricks edges]}]
+(defn- merge-candidates
+  "Components with one dependent, itself a component, with their size as a
+  share of the dependent's as their value. Moving one into a base would go
+  against Polylith, so a base's components don't count."
+  [{:keys [bricks edges]}]
   (let [index (brick-index bricks)
         dependents (update-vals (group-by :to edges) #(distinct (map :from %)))]
     (for [{:keys [brick metrics]} bricks
@@ -194,16 +134,10 @@
                              (pos? (get-in other [:metrics :forms] 0)))
                        (/ (:forms metrics 0)
                          (double (get-in other [:metrics :forms]))))]
-          :when (and size (<= size max-size))]
-      {:scope :dependency
-       :brick brick
-       :metric :merge-candidate
-       :label "Merge candidate"
+          :when size]
+      {:brick brick
        :subject dependent
        :value size
-       :limit max-size
-       :level level
-       :rule {:rule :merge-candidates}
        :message (str "is used only by " dependent ", and has "
                   (Math/round (* 100 size)) "% as many forms; consider"
                   " merging it into " dependent)})))
@@ -216,24 +150,18 @@
    :dynamic "defines a dynamic var"
    :alter-var-root "calls alter-var-root on"})
 
-(defn- mutable-state-violations
-  "Mutable state in components, which bases, as the shell, may hold. State
-  in an interface namespace is shared with every brick that uses it."
-  [level {:keys [workspace bricks]}]
+(defn- mutable-state
+  "Mutable state in every brick. State in an interface namespace is shared
+  with every brick that uses it."
+  [{:keys [workspace bricks]}]
   (let [segments (names/segments (:top-namespace workspace) bricks)]
     (for [{:keys [brick sources]} bricks
-          :when (= :component (:type brick))
           {:keys [ns file mutable-state]} sources
           {:keys [name line kind]} mutable-state
           :let [interface? (names/interface-ns? workspace
                              (segments (:name brick)) ns)]]
-      {:scope :dependency
-       :brick brick
-       :metric :mutable-state
-       :label "Mutable state"
+      {:brick brick
        :subject (str name)
-       :level level
-       :rule {:rule :mutable-state}
        :location {:file file :line line :name (str name)}
        :message (str (mutable-state-text kind)
                   (when (= :alter-var-root kind) (str " " name))
@@ -242,65 +170,61 @@
                       " shares the state")
                     ", state hidden from the functions that use it"))})))
 
-(defn- broad-catch-violations
-  "Broad catch clauses in components. Bases, at the edges, are where a
+(defn- broad-catches
+  "Broad catch clauses in every brick. Bases, at the edges, are where a
   failure's meaning is known."
-  [level {:keys [bricks]}]
+  [{:keys [bricks]}]
   (for [{:keys [brick sources]} bricks
-        :when (= :component (:type brick))
         {:keys [file catches]} sources
         {:keys [line class broad?]} catches
         :when broad?]
-    {:scope :dependency
-     :brick brick
-     :metric :broad-catch
-     :label "Broad catch"
+    {:brick brick
      :subject (str file ":" line)
-     :level level
-     :rule {:rule :broad-catch}
      :location {:file file :line line}
      :message (str "catches " class ", deciding for every caller what a"
                 " failure means")}))
 
-(defn- level
-  "A rule's level: the rule itself, or its :level when it has settings."
-  [rule]
-  (if (map? rule) (:level rule) rule))
+(def ^:private untyped-text
+  {:untyped "throws ex-info without a :type in its data"
+   :java "throws a Java exception, which callers can tell apart only by class"})
 
-(defn- rule-section
-  "The report section of a rule violation: its rule group's, or
-  dependencies for a violation whose metric names no rule, such as
-  :merge-candidate."
-  [{:keys [metric]}]
-  (get (into {} rule-group-sections) (rule-group metric) :dependencies))
+(defn- untyped-errors
+  "Throws that give callers nothing to tell failures apart by, in every
+  brick."
+  [{:keys [bricks]}]
+  (for [{:keys [brick sources]} bricks
+        {:keys [file throws]} sources
+        {:keys [line kind]} throws
+        :when (untyped-text kind)]
+    {:brick brick
+     :subject (str file ":" line)
+     :location {:file file :line line}
+     :message (untyped-text kind)}))
 
-(defn check
-  [rules {:keys [workspace bricks used] :as analysis}]
-  (let [{:keys [stable-dependencies
-                connascence-of-position duplicate-code
-                merge-candidates co-change library-spread
-                mutable-state broad-catch test-boundary]} rules]
-    (mapv #(assoc % :section (rule-section %))
-      (concat
-        (when stable-dependencies
-          (stable-dependency-violations stable-dependencies analysis))
-        (when (level connascence-of-position)
-          (connascence/position-violations connascence-of-position
-            workspace bricks used))
-        (when (level duplicate-code)
-          (connascence/algorithm-violations duplicate-code bricks))
-        (when (level merge-candidates)
-          (merge-candidate-violations merge-candidates analysis))
-        (when (level co-change)
-          (co-change/violations co-change analysis))
-        (when (level library-spread)
-          (libraries/violations library-spread analysis))
-        (when mutable-state
-          (mutable-state-violations mutable-state analysis))
-        (when broad-catch
-          (broad-catch-violations broad-catch analysis))
-        (when test-boundary
-          (tests/violations test-boundary analysis))))))
+(defn- lowest-limit
+  "The smallest threshold of settings: the one that a :max metric's values
+  pass first."
+  [settings]
+  (some->> (keep #(get settings %) [:error :warning]) seq (apply min)))
+
+(defn findings
+  [settings {:keys [workspace bricks used] :as analysis}]
+  (let [{:keys [co-change duplicate-code library-spread]} settings]
+    (cond-> {:unstable-dependencies (vec (unstable-dependencies analysis))
+             :positional-interface (vec (connascence/positional-interface
+                                          workspace bricks used))
+             :merge-candidate (vec (merge-candidates analysis))
+             :mutable-state (vec (mutable-state analysis))
+             :broad-catches (vec (broad-catches analysis))
+             :untyped-errors (vec (untyped-errors analysis))
+             :boundary-crossings (vec (tests/boundary-crossings analysis))
+             :library-spread (vec (libraries/spread
+                                    (:allow library-spread) analysis))}
+      (lowest-limit duplicate-code)
+      (assoc :duplicate-code (vec (connascence/duplicates
+                                    (lowest-limit duplicate-code) bricks)))
+      co-change
+      (assoc :co-change (vec (co-change/findings co-change analysis))))))
 
 (defn neighbors
   [bricks edges]
@@ -316,11 +240,11 @@
 ;; Graph
 
 (defn- problem-edges
-  "Edges to draw in red, from stable-dependency violations, as [from to]
+  "Edges to draw in red, from unstable-dependency violations, as [from to]
   pairs."
   [violations]
   (into #{}
-    (comp (filter #(= :stable-dependencies (:metric %)))
+    (comp (filter #(= :unstable-dependencies (:metric %)))
       (map (juxt (comp :name :brick) :subject)))
     violations))
 

@@ -37,10 +37,10 @@
                          :when (not (tested [ns name]))]
                      name)))}]))))
 
-(defn violations
-  "A violation for each require, in a brick's tests, of another brick's
-  namespace other than its interface."
-  [level {:keys [workspace bricks]}]
+(defn boundary-crossings
+  "Each require, in a brick's tests, of another brick's namespace other
+  than its interface."
+  [{:keys [workspace bricks]}]
   (let [top-ns (:top-namespace workspace)
         segments (names/segments top-ns bricks)]
     (for [{:keys [brick tests]} bricks
@@ -50,13 +50,8 @@
           :let [s (names/segment top-ns ns)]
           :when (and s (not= s own)
                   (not (names/interface-ns? workspace s ns)))]
-      {:scope :dependency
-       :brick brick
-       :metric :test-boundary
-       :label "Test boundary"
+      {:brick brick
        :subject (str file " " ns)
-       :level level
-       :rule {:rule :test-boundary}
        :location {:file file :line line}
        :message (str "requires " ns ", inside " s
                   "; test through its interface instead")})))

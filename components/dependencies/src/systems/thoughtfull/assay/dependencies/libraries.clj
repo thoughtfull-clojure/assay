@@ -78,24 +78,20 @@
                     :shared-libraries (count (filter #(< 1 (count (:bricks %)))
                                                ls))}]))}))
 
-(defn violations
-  "A violation at each brick's require of a library that more than
-  max-bricks bricks require."
-  [{:keys [max-bricks level]} {:keys [bricks libraries]}]
-  (let [index (into {} (map (juxt (comp :name :brick) :brick)) bricks)]
+(defn spread
+  "At each brick's require of a library that another brick also requires,
+  the number of bricks that require it as its value. Libraries named in
+  allow, as strings or symbols, are left out."
+  [allow {:keys [bricks libraries]}]
+  (let [index (into {} (map (juxt (comp :name :brick) :brick)) bricks)
+        allowed? (set (map str allow))]
     (for [{:keys [library requires] brick-names :bricks} libraries
-          :when (< max-bricks (count brick-names))
+          :when (and (< 1 (count brick-names)) (not (allowed? library)))
           {:keys [brick file line]} requires
           :let [others (remove #{brick} brick-names)]]
-      {:scope :dependency
-       :brick (index brick)
-       :metric :library-spread
-       :label "Library spread"
+      {:brick (index brick)
        :subject library
        :value (count brick-names)
-       :limit max-bricks
-       :level level
-       :rule {:rule :library-spread}
        :location {:file file :line line}
        :message (str "requires " library ", which "
                   (str/join ", " others) " also "

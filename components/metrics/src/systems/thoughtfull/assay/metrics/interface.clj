@@ -43,6 +43,25 @@
   [root brick]
   (core/measure-brick root brick))
 
+(def metrics
+  "The metric registry, in display order. Each metric is a map of :key,
+  :section (the report section, which is also its category in the
+  config), :label, :description, and how its thresholds apply: :kind
+  (:brick, :function, :finding, or :count), :direction (:max or :min),
+  :types (the brick types it describes), :checks (the brick types its
+  thresholds check), and optionally :default (its default thresholds, a
+  map of :warning and :error), :options (the defaults of its other
+  settings), :function-key and :line-key (for a :function metric, the
+  function's value and line), and :format and :precision. See the
+  comment on the registry in core for what each kind means."
+  core/metrics)
+
+(defn metric
+  "The registry entry for metric key k, with its defaults filled in, or
+  nil."
+  [k]
+  (core/metric k))
+
 (def columns
   "Ordered display columns for brick metrics, each a map of :label,
   :description (a short tooltip), :explanation (a longer legend entry), and
@@ -57,10 +76,8 @@
   core/sections)
 
 (defn violation-section
-  "The key of the section (as in sections) a violation, or a threshold rule
-  given as {:scope :metric}, belongs to: its :section, if it has one, as
-  rule violations do; complexity for a function; or its brick metric's
-  section."
+  "The key of the section (as in sections) that a violation, or any map
+  of :metric, belongs to: its metric's."
   [violation]
   (core/violation-section violation))
 
@@ -84,8 +101,8 @@
 
 (defn averages
   "Each brick metric's mean across the measurements that have a value, or
-  nil when none do. Metrics that only describe components, such as
-  abstractness, afferent coupling, and cohesion, average components only."
+  nil when none do, of the brick types the metric checks: components
+  only for metrics such as afferent coupling and cohesion."
   [measurements]
   (core/averages measurements))
 
@@ -97,16 +114,15 @@
   "Brick metrics at least k standard deviations from the mean of every
   brick that has a value, as a map of [brick-name metric-key] to :z (signed
   standard deviations from the mean), :mean, :std-dev (of the population),
-  and :peers, :bricks or :components (for metrics that only describe
+  and :peers, :bricks or :components (for metrics that check only
   components, which leave bases out). A metric needs at least 3 values and
   some variation."
   [measurements k]
   (core/outliers measurements k))
 
 (defn label
-  "The display label of a violation, or of any map of :metric and optionally
-  :scope (:brick, the default, or :function). A :label in the map wins,
-  then the registry's label, then the metric's name."
+  "The display label of a violation, or of any map of :metric. A :label in
+  the map wins, then the registry's label, then the metric's name."
   [m]
   (core/label m))
 

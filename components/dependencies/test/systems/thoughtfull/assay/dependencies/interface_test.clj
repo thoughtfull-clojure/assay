@@ -46,6 +46,12 @@
   [analysis]
   (into {} (map (juxt (comp :name :brick) :metrics)) (:bricks analysis)))
 
+(defn- found
+  "The findings of metric k in analysis, with settings."
+  ([k analysis] (found k {} analysis))
+  ([k settings analysis]
+   (get (dependencies/findings settings analysis) k)))
+
 (deftest analyze-test
   (let [analysis (dependencies/analyze workspace acyclic)
         m (metrics-by-name analysis)]
@@ -67,8 +73,12 @@
       (is (= 0.9 (get-in m ["a" :abstractness])))
       (is (= 0.5 (get-in m ["b" :abstractness])))
       (is (nil? (get-in m ["x" :abstractness]))))
-    (testing "no violations"
-      (is (empty? (dependencies/check {} analysis))))))
+    (testing "main-sequence distance: |abstractness + instability - 1|"
+      (is (< 0.399 (get-in m ["a" :main-sequence-distance]) 0.401))
+      (is (= 0.5 (get-in m ["b" :main-sequence-distance])))
+      (is (nil? (get-in m ["x" :main-sequence-distance]))))
+    (testing "no unstable dependencies"
+      (is (empty? (found :unstable-dependencies analysis))))))
 
 (deftest isolated-brick-test
   (let [m (metrics-by-name
@@ -76,26 +86,23 @@
               [(brick "lonely" :component (source 't.lonely.interface 10))]))]
     (is (= {:afferent 0 :efferent 0 :instability nil :abstractness 0.0
             :cohesion nil :shared-keywords 0 :libraries 0 :shared-libraries 0
-            :error-surface 0 :untested-interface 1}
+            :error-surface 0 :untested-interface 1
+            :main-sequence-distance nil}
           (m "lonely")))))
 
-(deftest check-test
+(deftest unstable-dependencies-test
   (let [;; b now requires c, so b (stable) depends on c (less stable)
         bricks (assoc-in acyclic [1 :sources 1 :requires]
                  [{:ns 't.c.interface :line 9}])
-        analysis (dependencies/analyze workspace bricks)
-        violations (dependencies/check {} analysis)
-        by-metric (group-by :metric violations)]
-    (testing "stable dependencies"
-      (is (= [["b" "c" :error {:file "t.b.core.clj" :line 9}]]
-            (map (juxt (comp :name :brick) :subject :level :location)
-              (:stable-dependencies by-metric))))
-      (is (re-find #"depends on c \(instability 0\.5\), which is less stable than b \(0\.33\)"
-            (:message (first (:stable-dependencies by-metric))))))
-    (testing "rules can be turned off or downgraded"
-      (is (empty? (dependencies/check {:stable-dependencies nil} analysis)))
-      (is (every? #(= :warning (:level %))
-            (dependencies/check {:stable-dependencies :warning} analysis))))))
+        [finding & more] (found :unstable-dependencies
+                           (dependencies/analyze workspace bricks))]
+    (is (empty? more))
+    (is (= ["b" "c" {:file "t.b.core.clj" :line 9}]
+          ((juxt (comp :name :brick) :subject :location) finding)))
+    (is (< 0.166 (:value finding) 0.167)
+      "the value is how much less stable the dependency is")
+    (is (re-find #"depends on c \(instability 0\.5\), which is less stable than b \(0\.33\)"
+          (:message finding)))))
 
 (def ^:private libraried
   ;; a and b both use the database driver; a also uses clojure.string,
@@ -129,41 +136,43 @@
     (testing "metrics"
       (is (= {"a" [1 1] "b" [2 1] "x" [2 0]}
             (update-vals m (juxt :libraries :shared-libraries)))))
-    (testing "a violation at each brick's first require"
-      (is (= [["a" "next.jdbc" {:file "a/core.clj" :line 3}
+    (testing "a finding at each brick's first require of a shared library"
+      (is (= [["a" "next.jdbc" 2 {:file "a/core.clj" :line 3}
                "requires next.jdbc, which b also requires"]
-              ["b" "next.jdbc" {:file "b/core.clj" :line 3}
+              ["b" "next.jdbc" 2 {:file "b/core.clj" :line 3}
                "requires next.jdbc, which a also requires"]]
-            (->> (dependencies/check {} analysis)
-              (filter #(= :library-spread (:metric %)))
-              (map (juxt (comp :name :brick) :subject :location :message)))))
-      (is (empty? (filter #(= :library-spread (:metric %))
-                    (dependencies/check {:library-spread {:max-bricks 2}}
-                      analysis)))))))
+            (map (juxt (comp :name :brick) :subject :value :location :message)
+              (found :library-spread analysis)))))
+    (testing "allowed libraries are left out"
+      (is (empty? (found :library-spread
+                    {:library-spread {:allow #{"next.jdbc"}}} analysis)))
+      (is (empty? (found :library-spread
+                    {:library-spread {:allow #{'next.jdbc}}} analysis))))))
 
 (deftest mutable-state-test
   (let [state [{:name 'cache :line 2 :kind :atom}]
-        violations (->> (dependencies/check {}
-                          (dependencies/analyze workspace
-                            [{:brick {:name "a" :type :component}
-                              :metrics {}
-                              :sources [{:file "a/core.clj" :ns 't.a.core
-                                         :mutable-state state}
-                                        {:file "a/interface.clj"
-                                         :ns 't.a.interface
-                                         :mutable-state state}]}
-                             {:brick {:name "x" :type :base}
-                              :metrics {}
-                              :sources [{:file "x/main.clj" :ns 't.x.main
-                                         :mutable-state state}]}]))
-                     (filter #(= :mutable-state (:metric %))))]
+        findings (found :mutable-state
+                   (dependencies/analyze workspace
+                     [{:brick {:name "a" :type :component}
+                       :metrics {}
+                       :sources [{:file "a/core.clj" :ns 't.a.core
+                                  :mutable-state state}
+                                 {:file "a/interface.clj"
+                                  :ns 't.a.interface
+                                  :mutable-state state}]}
+                      {:brick {:name "x" :type :base}
+                       :metrics {}
+                       :sources [{:file "x/main.clj" :ns 't.x.main
+                                  :mutable-state state}]}]))]
     (is (= [["a" {:file "a/core.clj" :line 2 :name "cache"}
              "defines an atom, state hidden from the functions that use it"]
             ["a" {:file "a/interface.clj" :line 2 :name "cache"}
              (str "defines an atom in its interface, so every brick that"
-               " uses it shares the state")]]
-          (map (juxt (comp :name :brick) :location :message) violations))
-      "components only: a base is the shell")))
+               " uses it shares the state")]
+            ["x" {:file "x/main.clj" :line 2 :name "cache"}
+             "defines an atom, state hidden from the functions that use it"]]
+          (map (juxt (comp :name :brick) :location :message) findings))
+      "every brick: the metric decides which it checks")))
 
 (deftest error-surface-test
   ;; a's interface delegates to core, whose f calls b's interface, whose
@@ -196,25 +205,42 @@
     (is (= {"a" 1 "b" 1 "x" nil} (update-vals m :error-surface))
       "across bricks, through referred and aliased symbols; bases have none")))
 
-(deftest broad-catch-test
+(deftest broad-catches-test
   (is (= [["a" {:file "a/core.clj" :line 4}
-           "catches Exception, deciding for every caller what a failure means"]]
-        (->> (dependencies/check {}
-               (dependencies/analyze workspace
-                 [{:brick {:name "a" :type :component}
-                   :metrics {}
-                   :sources [{:file "a/core.clj" :ns 't.a.core
-                              :catches [{:line 4 :class "Exception" :broad? true}
-                                        {:line 9 :class "clojure.lang.ExceptionInfo"
-                                         :broad? false}]}]}
-                  {:brick {:name "x" :type :base}
-                   :metrics {}
-                   :sources [{:file "x/main.clj" :ns 't.x.main
-                              :catches [{:line 2 :class "Throwable"
-                                         :broad? true}]}]}]))
-          (filter #(= :broad-catch (:metric %)))
-          (map (juxt (comp :name :brick) :location :message))))
-    "components only: bases are where catching belongs"))
+           "catches Exception, deciding for every caller what a failure means"]
+          ["x" {:file "x/main.clj" :line 2}
+           "catches Throwable, deciding for every caller what a failure means"]]
+        (->> (dependencies/analyze workspace
+               [{:brick {:name "a" :type :component}
+                 :metrics {}
+                 :sources [{:file "a/core.clj" :ns 't.a.core
+                            :catches [{:line 4 :class "Exception" :broad? true}
+                                      {:line 9 :class "clojure.lang.ExceptionInfo"
+                                       :broad? false}]}]}
+                {:brick {:name "x" :type :base}
+                 :metrics {}
+                 :sources [{:file "x/main.clj" :ns 't.x.main
+                            :catches [{:line 2 :class "Throwable"
+                                       :broad? true}]}]}])
+          (found :broad-catches)
+          (map (juxt (comp :name :brick) :location :message))))))
+
+(deftest untyped-errors-test
+  (is (= [["a" {:file "a/core.clj" :line 2}
+           "throws ex-info without a :type in its data"]
+          ["a" {:file "a/core.clj" :line 3}
+           "throws a Java exception, which callers can tell apart only by class"]]
+        (->> (dependencies/analyze workspace
+               [{:brick {:name "a" :type :component}
+                 :metrics {}
+                 :sources [{:file "a/core.clj" :ns 't.a.core
+                            :throws [{:line 1 :kind :typed}
+                                     {:line 2 :kind :untyped}
+                                     {:line 3 :kind :java}
+                                     {:line 4 :kind :rethrow}
+                                     {:line 5 :kind :unknown}]}]}])
+          (found :untyped-errors)
+          (map (juxt (comp :name :brick) :location :message))))))
 
 (deftest tests-test
   (let [defs (fn [& names] (vec (for [n names] {:name n :line 1})))
@@ -242,9 +268,8 @@
     (testing "tests that require another brick's implementation"
       (is (= [["b" {:file "b/core_test.clj" :line 3}
                "requires t.a.core, inside a; test through its interface instead"]]
-            (->> (dependencies/check {} analysis)
-              (filter #(= :test-boundary (:metric %)))
-              (map (juxt (comp :name :brick) :location :message))))))))
+            (map (juxt (comp :name :brick) :location :message)
+              (found :boundary-crossings analysis)))))))
 
 (deftest merge-candidates-test
   ;; s is used only by a, a component 10 times its size. a is used only by
@@ -254,24 +279,16 @@
                    (brick "s" :component (source 't.s.interface 10))))
         bricks (update-in bricks [0 :sources 1 :requires]
                  conj {:ns 't.s.interface :line 4})
-        candidates (fn [rules]
-                     (filter #(= :merge-candidate (:metric %))
-                       (dependencies/check rules
-                         (dependencies/analyze workspace bricks))))
-        violations (candidates {})]
-    (testing "a small component with one component dependent"
-      (is (= [["s" "a" 0.1 :warning]]
-            (map (juxt (comp :name :brick) :subject :value :level)
-              violations)))
+        candidates (found :merge-candidate
+                     (dependencies/analyze workspace bricks))]
+    (testing "components with one component dependent, by relative size"
+      (is (= #{["s" "a" 0.1] ["a" "c" 1.0]}
+            (set (map (juxt (comp :name :brick) :subject :value) candidates))))
       (is (re-find #"is used only by a, and has 10% as many forms"
-            (:message (first violations)))))
-    (testing ":max-size sets how small"
-      (is (empty? (candidates {:merge-candidates {:max-size 0.05}})))
-      (is (= #{"s" "a"}
-            (set (map (comp :name :brick)
-                   (candidates {:merge-candidates {:max-size 1.0}}))))))
+            (:message (first (filter #(= "s" (get-in % [:brick :name]))
+                               candidates))))))
     (testing "a component used only by a base is not a candidate"
-      (is (not-any? #(= "c" (get-in % [:brick :name])) violations)))))
+      (is (not-any? #(= "c" (get-in % [:brick :name])) candidates)))))
 
 (defn- defs
   [& specs]
@@ -338,46 +355,32 @@
 
 (deftest connascence-test
   (let [analysis (dependencies/analyze workspace connected)
-        violations (group-by :metric (dependencies/check {} analysis))]
+        findings (dependencies/findings {:duplicate-code {:warning 30}}
+                   analysis)]
     (testing "meaning: shared keywords"
       (is (= {"a" 1 "b" 1}
             (update-vals (metrics-by-name analysis) :shared-keywords))))
     (testing "position: only interface functions other bricks use"
-      (is (= [["b" "wide" 4 {:file "b/interface.clj" :line 3 :name "wide"}]]
+      (is (= [["b" "wide" 4 {:file "b/interface.clj" :line 3 :name "wide"}]
+              ["b" "narrow" 1 {:file "b/interface.clj" :line 5 :name "narrow"}]]
             (map (juxt (comp :name :brick) :subject :value :location)
-              (:connascence-of-position violations)))))
+              (:positional-interface findings)))))
     (testing "algorithm: the largest duplicated fragment, in each brick"
       (is (= #{["a" 40 10] ["b" 40 30]}
             (set (map (juxt (comp :name :brick) :value (comp :line :location))
-                   (:duplicate-code violations)))))
+                   (:duplicate-code findings)))))
       (is (re-find #"duplicates 40 forms in b \(b/interface.clj:30\)"
             (:message (first (filter #(= "a" (get-in % [:brick :name]))
-                               (:duplicate-code violations)))))))
-    (testing "settings merge over the defaults"
-      (is (empty? (:duplicate-code
-                   (group-by :metric
-                     (dependencies/check {:duplicate-code {:min-forms 50}}
-                       analysis)))))
-      (is (= [:warning]
-            (distinct (map :level (dependencies/check
-                                    {:connascence-of-position {:max 2}}
-                                    analysis))))))))
-
-(deftest merge-rules-test
-  (let [merged (dependencies/merge-rules
-                 {:dependency-rules {:duplicate-code {:min-forms 50}}
-                  :error-handling-rules {:broad-catch :error}})]
-    (is (= #{:dependency-rules :io-rules :error-handling-rules :test-rules}
-          (set (keys merged))))
-    (is (= {:min-forms 50 :level :warning}
-          (get-in merged [:dependency-rules :duplicate-code]))
-      "settings merge over the defaults")
-    (is (= {:broad-catch :error} (:error-handling-rules merged)))
-    (is (= {:mutable-state :warning} (:io-rules merged)))
-    (is (= {:test-boundary :warning} (:test-rules merged))))
-  (is (thrown-with-msg? clojure.lang.ExceptionInfo
-        #":broad-catch belongs under :error-handling-rules, not :dependency-rules"
-        (dependencies/merge-rules {:dependency-rules {:broad-catch nil}}))))
+                               (:duplicate-code findings)))))))
+    (testing "duplicates no bigger than the lowest limit aren't collected"
+      (is (empty? (found :duplicate-code {:duplicate-code {:warning 40}}
+                    analysis)))
+      (is (= 2 (count (found :duplicate-code
+                        {:duplicate-code {:warning 50 :error 39}}
+                        analysis)))))
+    (testing "off without thresholds"
+      (is (nil? (found :duplicate-code {:duplicate-code {:warning nil}}
+                  analysis))))))
 
 (deftest neighbors-test
   (is (= [{:brick {:name "a"} :depends-on ["b" "c"] :depended-on-by []}
@@ -403,6 +406,6 @@
            {:brick {:name "b" :type :component}}]
           [{:from "cli" :to "a"} {:from "a" :to "b" :new? true}
            {:from "b" :to "a"} {:from "cli" :to "a"}]
-          [{:metric :stable-dependencies :brick {:name "a"} :subject "b"}
-           {:metric :stable-dependencies :brick {:name "b"} :subject "a"}
+          [{:metric :unstable-dependencies :brick {:name "a"} :subject "b"}
+           {:metric :unstable-dependencies :brick {:name "b"} :subject "a"}
            {:metric :co-change :brick {:name "cli"} :subject "b"}]))))

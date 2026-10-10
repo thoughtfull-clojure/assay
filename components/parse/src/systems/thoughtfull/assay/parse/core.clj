@@ -32,18 +32,21 @@
     (n/sexpr node)))
 
 (defn- libspec-options
-  "The :as alias and :refer symbols of a libspec's options, when present."
+  "The :as and :as-alias aliases and :refer symbols of a libspec's options,
+  when present."
   [option-nodes]
   (let [options (into {}
                   (for [[k v] (partition 2 option-nodes)
                         :when (keyword? (token-value k))]
                     [(token-value k) v]))
         alias (some-> (options :as) token-value)
+        as-alias (some-> (options :as-alias) token-value)
         refer (when-let [v (options :refer)]
                 (when (= :vector (n/tag v))
                   (vec (filter symbol? (map token-value (code-children v))))))]
     (cond-> {}
       (symbol? alias) (assoc :as alias)
+      (symbol? as-alias) (assoc :as-alias as-alias)
       (seq refer) (assoc :refer refer))))
 
 (defn- libspec-entries

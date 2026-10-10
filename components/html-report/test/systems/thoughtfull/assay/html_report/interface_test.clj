@@ -16,17 +16,18 @@
             {:brick {:name "b" :type :component}
              :metrics {:mean-function-complexity 1}}]
    :edges [{:from "a" :to "b" :interface "b"}]
-   :violations [{:scope :function
+   :violations [{:kind :function
+                 :direction :max
                  :brick {:name "a" :type :component}
-                 :metric :complexity
+                 :metric :function-complexity
                  :subject "f"
                  :level :error
                  :message "12 is above the maximum of 10"
                  :location {:file "components/a/src/a.clj" :line 7 :name "f"}}]
-   :thresholds {:brick-thresholds {:abstractness [{:rule :min :value 0.5
-                                                   :types #{:component}}]}
-                :function-thresholds {:complexity [{:rule :max :value 10}]}}
-   :rules {:dependency-rules {:stable-dependencies nil}}})
+   :thresholds {:complexity {:function-complexity {:warning 8 :error 10}}
+                :modularity {:cohesion {:warning 0.5}}
+                :io {:library-spread {:warning 3 :allow #{"next.jdbc"}}}
+                :dependencies {:co-change nil}}})
 
 (deftest render-test
   (let [html (html-report/render report)]
@@ -40,10 +41,15 @@
     (is (str/includes? html "mermaid@11.17.2"))
     (is (str/includes? html "component</span></td><td>b</td><td></td>")
       "dependencies")
-    (is (str/includes? html "<td>Bricks</td><td>Abstractness</td><td>≥ 0.5 (components)</td>"))
-    (is (str/includes? html "<td>Functions</td><td>Complexity</td><td>≤ 10</td>"))
+    (is (str/includes? html
+          (str "<td>Cohesion</td><td>components</td>"
+            "<td class=\"num\">&lt; 0.5</td><td class=\"num\"></td><td></td>")))
+    (is (str/includes? html
+          (str "<td>Complex functions</td><td>functions of bricks</td>"
+            "<td class=\"num\">&gt; 8</td><td class=\"num\">&gt; 10</td>")))
+    (is (str/includes? html "<td>allow next.jdbc</td>") "options")
+    (is (not (str/includes? html "<td>Co-change</td><td>bricks")) "off")
     (is (= 1 (count (re-seq #"<h2>Thresholds</h2>" html))) "one thresholds heading")
-    (is (str/includes? html ">off</td>") "a rule turned off")
     (is (str/includes? html "components/a/src/a.clj:7"))))
 
 (deftest comparison-test
@@ -155,38 +161,27 @@
       "the dependencies table leaves bases out")
     (is (str/includes? (section "Modularity")
           (str "<span class=\"brick-name\">cli</span> <span class=\"type\">"
-            "base</span></td><td class=\"num\">–</td>"
+            "base</span></td><td class=\"num\">–</td><td class=\"num\">–</td>"
             "<td class=\"num\">0.25</td>"))
-      "a base has no abstractness, but has cohesion")))
+      "a base has no abstractness or main-sequence distance, but has
+      cohesion")))
 
-(deftest rule-groups-test
-  (let [html (html-report/render
-               (assoc report :rules
-                 {:dependency-rules {:stable-dependencies :error}
-                  :io-rules {:mutable-state :warning}
-                  :error-handling-rules {:broad-catch :warning}
-                  :test-rules {:test-boundary :warning}}))]
-    (is (= ["Dependencies" "Complexity" "Modularity" "I/O and mutability"
-            "Error handling" "Tests"]
+(deftest thresholds-table-test
+  (let [html (html-report/render report)]
+    (is (= ["Complexity" "Modularity" "I/O and mutability"]
           (map second
             (re-seq #"<td class=\"cat cat-[a-z]+\" rowspan=\"\d+\">([^<]+)</td>"
               html)))
-      "the thresholds table is grouped by category, in section order")
+      "grouped by category, in section order; a metric that is off has no row")
     (is (str/includes? html
           (str "<td class=\"cat cat-complexity\" rowspan=\"1\">Complexity</td>"
-            "<td>Functions</td><td>Complexity</td><td>≤ 10</td>"))
-      "a category's cell spans its rows")
-    (is (str/includes? html
-          (str "<td class=\"cat cat-modularity\" rowspan=\"1\">Modularity"
-            "</td><td>Bricks</td><td>Abstractness</td>")))
-    (is (str/includes? html
-          (str "<td class=\"cat cat-errors\" rowspan=\"1\">Error handling"
-            "</td><td>Bricks</td><td>Broad catch</td>")))))
+            "<td>Complex functions</td>"))
+      "a category's cell spans its rows")))
 
 (deftest section-colors-test
   (let [html (html-report/render report)]
     (is (str/includes? html
-          "<td class=\"cat cat-complexity\">Complexity</td><td>12 is above")
+          "<td class=\"cat cat-complexity\">Complex functions</td><td>12 is above")
       "a violation's metric is tinted with its section's color")
     (is (str/includes? html
           "<div class=\"section cat-dependencies\"><h2>Dependencies</h2>")

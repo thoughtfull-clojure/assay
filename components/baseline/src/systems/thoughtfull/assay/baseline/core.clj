@@ -12,17 +12,17 @@
       (:name brick))))
 
 (defn- violation-key
-  "Identifies a violation across reports: a function or dependency is
+  "Identifies a violation across reports: a function or finding is
   identified by its :subject, not by its line, which moves."
-  [{:keys [brick metric rule subject]}]
-  [(:name brick) metric rule subject])
+  [{:keys [brick metric subject]}]
+  [(:name brick) metric subject])
 
 (defn- worsened?
   "True if a function violation's value is further past its limit than the
   same function's value in base: a change to the function made it worse."
-  [{:keys [scope rule value base-value]}]
-  (and (= :function scope) (number? value) (number? base-value)
-    (case (:rule rule)
+  [{:keys [kind direction value base-value]}]
+  (and (= :function kind) (number? value) (number? base-value)
+    (case direction
       :max (> value base-value)
       :min (< value base-value)
       false)))
@@ -42,11 +42,12 @@
 (defn- base-value
   "The violation's metric in base: the brick's metric, or for a function
   violation, the same function's."
-  [base-metrics base-functions {:keys [scope brick metric subject]}]
-  (case scope
-    :function (get-in base-functions [[(:name brick) subject] metric])
-    :dependency nil
-    (get-in base-metrics [(:name brick) metric])))
+  [base-metrics base-functions {:keys [kind brick metric subject]}]
+  (case kind
+    :function (get-in base-functions [[(:name brick) subject]
+                                      (:function-key (metrics/metric metric))])
+    :brick (get-in base-metrics [(:name brick) metric])
+    nil))
 
 (defn- fmt
   [x]

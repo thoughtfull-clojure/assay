@@ -66,35 +66,45 @@
   [dir]
   (.exists (io/file dir "workspace.edn")))
 
+(defn- metric-settings
+  "Each metric's merged settings, by metric key."
+  [config]
+  (into {}
+    (for [{:keys [key]} metrics/metrics
+          :let [s (thresholds/settings config key)]
+          :when s]
+      [key s])))
+
 (defn- commits
-  "The commits the co-change rule looks at, or nil when it is off or root
+  "The commits the co-change metric looks at, or nil when it is off or root
   has no Git history to read."
   [root config]
-  (let [{:keys [co-change]} (:dependency-rules
-                             (dependencies/merge-rules config))]
-    (when (:level co-change)
+  (let [{:keys [since] :as co-change} (thresholds/settings config
+                                        :co-change)]
+    (when (or (:warning co-change) (:error co-change))
       (try
-        (git/log-files root (:since co-change))
+        (git/log-files root since)
         (catch clojure.lang.ExceptionInfo _ nil)))))
 
 (defn- measure
-  "Measure and check the workspace at root, with commits for the co-change
-  rule."
+  "Measure and check the workspace at root against merged config, with
+  commits for the co-change metric."
   [root config commits]
-  (let [rules (thresholds/merge-config config)
-        analysis (-> (dependencies/analyze (workspace/config root)
+  (let [analysis (-> (dependencies/analyze (workspace/config root)
                        (mapv #(metrics/measure-brick root %)
                          (workspace/bricks root)))
                    (assoc :commits commits))
-        bricks (:bricks analysis)]
+        settings (cond-> (metric-settings config)
+                   (nil? commits) (dissoc :co-change))
+        {:keys [bricks violations]} (thresholds/check config
+                                      (:bricks analysis)
+                                      (dependencies/findings settings
+                                        analysis))]
     {:bricks bricks
      :edges (:edges analysis)
      :libraries (:libraries analysis)
-     :violations (into (thresholds/check rules bricks)
-                   (dependencies/check
-                     (apply merge (vals (dependencies/merge-rules config)))
-                     analysis))
-     :thresholds rules}))
+     :violations violations
+     :thresholds config}))
 
 (defn- temp-dir
   ^java.io.File []
@@ -130,13 +140,13 @@
   report map for the report components."
   [workspace-dir config base-ref]
   (let [root (.getCanonicalFile (io/file workspace-dir))
+        config (thresholds/merge-config config)
         head (measure root config (commits root config))]
     (-> (if base-ref
           (compare-with-base root config base-ref head)
           head)
       (assoc :workspace (.getName root)
-        :generated-at (str (java.time.Instant/now))
-        :rules (dependencies/merge-rules config)))))
+        :generated-at (str (java.time.Instant/now))))))
 
 (defn- failed?
   "True if report has an error-level violation within scope, \"new\" or

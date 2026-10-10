@@ -109,9 +109,9 @@
                       [{:name "f" :file "components/a/src/a.clj" :line 7
                         :complexity 12 :depth 3 :forms 40 :params 1}])
                     (update :violations conj
-                      {:scope :function
+                      {:kind :function
                        :brick {:name "a" :type :component}
-                       :metric :complexity
+                       :metric :function-complexity
                        :subject "f"
                        :level :error
                        :message "12 is above the maximum of 10"})
@@ -128,18 +128,17 @@
 (deftest violation-marker-test
   (let [summary (github-report/summary
                   (assoc report :violations
-                    [{:scope :dependency :section :errors
+                    [{:kind :count
                       :brick {:name "a" :type :component}
-                      :metric :broad-catch :label "Broad catch"
+                      :metric :broad-catches
                       :level :warning :message "catches Exception"}
-                     {:scope :dependency
+                     {:kind :finding
                       :brick {:name "a" :type :component}
-                      :metric :merge-candidate :label "Merge candidate"
+                      :metric :merge-candidate
                       :level :warning :message "could merge into b"}]))]
-    (is (str/includes? summary "| 🟧 Broad catch |")
-      "a rule violation is marked with its section")
-    (is (str/includes? summary "| 🟦 Merge candidate |")
-      "a violation without a section is a dependency's")))
+    (is (str/includes? summary "| 🟧 Broad catches |")
+      "a violation is marked with its metric's section")
+    (is (str/includes? summary "| 🟩 Merge into |"))))
 
 (deftest brick-annotation-test
   (is (= [(str "::warning file=components/a/deps.edn,line=1,"
