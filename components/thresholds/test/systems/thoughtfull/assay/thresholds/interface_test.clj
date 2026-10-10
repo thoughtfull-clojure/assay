@@ -44,8 +44,6 @@
   (let [invalid? (fn [re config]
                    (is (thrown-with-msg? clojure.lang.ExceptionInfo re
                          (thresholds/merge-config config))))]
-    (invalid? #"older version of assay"
-      {:function-thresholds {:complexity [{:rule :max :value 10}]}})
     (invalid? #"Unknown section :functions" {:functions {}})
     (invalid? #"Unknown metric :nope under :complexity"
       {:complexity {:nope {:warning 1}}})

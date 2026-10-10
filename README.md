@@ -316,11 +316,7 @@ library names that don't count, and `:since`, `:min-shared`, and
 [dependencies](#dependencies)).
 
 An unknown category, metric, or setting, a metric under the wrong
-category, or a malformed threshold is a usage error, and so is the
-configuration format of assay 0.2 and earlier, with
-`:function-thresholds`, `:brick-thresholds`, and `:*-rules` keys. To
-convert one, find each rule's metric in the tables above, and set its
-level to the old limit.
+category, or a malformed threshold is a usage error.
 
 ## Continuous integration
 

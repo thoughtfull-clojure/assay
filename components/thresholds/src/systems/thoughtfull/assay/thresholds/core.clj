@@ -17,10 +17,6 @@
 
 ;; Config
 
-(def ^:private old-keys
-  #{:function-thresholds :brick-thresholds :dependency-rules :io-rules
-    :error-handling-rules :test-rules})
-
 (def ^:private section-keys
   (set (map :key metrics/sections)))
 
@@ -77,12 +73,6 @@
 
 (defn- check-config
   [config]
-  (when-let [old (seq (filter old-keys (keys config)))]
-    (invalid (str "Config keys " (str/join ", " (map pr-str (sort old)))
-               " are from an older version of assay. Group metrics by"
-               " report section instead, such as {:complexity"
-               " {:function-complexity {:error 10}}}; see the README.")
-      {:keys (vec old)}))
   (doseq [[section metric-settings] config]
     (when-not (contains? section-keys section)
       (invalid (str "Unknown section " (pr-str section) "; sections are "

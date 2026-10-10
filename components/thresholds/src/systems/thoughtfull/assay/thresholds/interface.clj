@@ -29,7 +29,7 @@
   default warning. Throws, with :type
   :systems.thoughtfull.assay.thresholds.core/invalid-config in its data,
   for an unknown section, metric, or setting, a metric under the wrong
-  section, a malformed threshold, or keys of the old config shape."
+  section, or a malformed threshold."
   [config]
   (core/merge-config config))
 

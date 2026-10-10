@@ -33,9 +33,9 @@ and assay follows [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.htm
   `{:complexity {:function-depth {:warning 8 :error 12}}}`. Each metric
   knows whether it flags high or low values and which brick types it
   checks, so the configuration doesn't say. Settings merge one by one
-  over the defaults, and `nil` turns a level or a metric off. The old
-  `:function-thresholds`, `:brick-thresholds`, and `:*-rules` keys are a
-  usage error, as are unknown or misplaced metrics.
+  over the defaults, and `nil` turns a level or a metric off. Unknown
+  categories, metrics, and settings, and misplaced metrics, are a usage
+  error, so a configuration in the old shape fails.
 - Every rule is a column, so every violation marks a cell: unstable
   dependencies, positional interface, and co-change under dependencies;
   complex, deep, long, and many-parameter functions under complexity;

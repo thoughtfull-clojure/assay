@@ -131,11 +131,7 @@
     (configure root "{:io {:broad-catches nil}}")
     (let [[status out] (run ["-w" (str root) "-f" "text"] {})]
       (is (= 2 status) "a metric under the wrong section is a usage error")
-      (is (str/includes? out ":broad-catches belongs under :errors")))
-    (configure root "{:dependency-rules {:mutable-state nil}}")
-    (let [[status out] (run ["-w" (str root) "-f" "text"] {})]
-      (is (= 2 status))
-      (is (str/includes? out "older version of assay")))))
+      (is (str/includes? out ":broad-catches belongs under :errors")))))
 
 (deftest config-location-test
   (let [root (workspace)]
