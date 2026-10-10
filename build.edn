@@ -1,3 +1,3 @@
 {:description "Code metrics and architecture checks for Polylith workspaces"
  :lib systems.thoughtfull/assay
- :version "0.2.0"}
+ :version "0.3.0"}
